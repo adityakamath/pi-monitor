@@ -1,17 +1,37 @@
 # Pi Island
 
-A native macOS "Dynamic Island" style interface for the [Pi Coding Agent](https://github.com/badlogic/pi-mono). Provides glanceable status, permission gating, and cost monitoring without leaving your IDE.
+A native macOS Dynamic Island-style interface for the [Pi Coding Agent](https://github.com/badlogic/pi-mono). Pi Island provides a floating notch UI that gives you a glanceable view of your Pi agent's status with full chat capabilities.
 
-## Overview
+## Features
 
-Pi Island consists of two components:
+- **Floating Notch UI** - Sits at the top of your screen, mimicking Dynamic Island
+- **Full Chat Interface** - Send messages, receive streaming responses
+- **Real-time Status** - See thinking, executing, idle states at a glance
+- **Tool Execution** - Watch tool calls with live output streaming
+- **Model Control** - Switch models, adjust thinking level
+- **Native macOS** - Built with SwiftUI, optimized for macOS
 
-1. **Native macOS App** (`PiIsland/`) - A Swift/SwiftUI floating window that sits near the notch/menu bar
-2. **Pi Extension** (`extension/pi-island.ts`) - Bridges the Pi Agent to the native app via Unix Domain Socket
+## Architecture
 
-## Quick Start
+Pi Island spawns Pi in RPC mode (`pi --mode rpc`) and communicates via stdin/stdout JSON protocol. This provides full bidirectional control:
 
-### 1. Build and Run the macOS App
+```
+Pi Island (macOS app)
+    |
+    |--- stdin: Commands (prompt, abort, set_model, etc.)
+    |--- stdout: Events (message streaming, tool execution, etc.)
+    |
+    v
+pi --mode rpc (child process)
+```
+
+## Requirements
+
+- macOS 14.0+
+- Pi Coding Agent installed (`npm install -g @mariozechner/pi-coding-agent`)
+- Valid API key or subscription for your preferred provider
+
+## Building
 
 ```bash
 cd PiIsland
@@ -19,135 +39,37 @@ swift build
 .build/debug/PiIsland
 ```
 
-### 2. Install the Extension
+## Usage
 
-Copy the extension to your Pi extensions directory:
+1. Launch Pi Island
+2. Hover over the notch area at the top of your screen to expand
+3. Type messages in the input bar to interact with Pi
+4. Click the status bar icon for quick actions (new session, cycle model, quit)
 
-```bash
-cp extension/pi-island.ts ~/.pi/agent/extensions/
-```
+### Keyboard Shortcuts
 
-Or for project-local installation:
+- **Enter** - Send message
+- **Escape** - Abort current operation (when streaming)
 
-```bash
-mkdir -p .pi/extensions
-cp extension/pi-island.ts .pi/extensions/
-```
+### Status Indicators
 
-### 3. Run Pi
+- **Gray** - Idle/Disconnected
+- **Blue** - Thinking
+- **Green** - Executing tool
+- **Red** - Error
 
-```bash
-pi
-```
-
-The extension will automatically connect to Pi Island when both are running.
-
-## Testing the Connection
-
-To test the socket connection without running Pi:
-
-```bash
-# Start Pi Island first
-cd PiIsland && .build/debug/PiIsland
-
-# In another terminal, run the test script
-node tests/test-bridge.mjs
-```
-
-You should see connection logs in the Pi Island console output.
-
-## Architecture
-
-```
-+---------------------+       +---------------------------+
-| macOS Environment   |       | Pi Agent Process (Node)   |
-|                     |       |                           |
-| +---------------+   |  IPC  | +---------------------+   |
-| | Pi Island App |<=========>| | Pi-Bridge Ext       |   |
-| | (Swift/SwiftUI)|  Socket  | | (TypeScript)        |   |
-| +---------------+   |       | +---------------------+   |
-|       ^             |       |           ^               |
-|       |             |       |           |               |
-| +---------------+   |       | +---------------------+   |
-| | Window Server |   |       | | Core Runtime        |   |
-| +---------------+   |       | +---------------------+   |
-+---------------------+       +---------------------------+
-```
-
-## IPC Protocol (JSON-Lines)
-
-| Direction      | Type        | Payload Example                           | Description              |
-|----------------|-------------|-------------------------------------------|--------------------------|
-| Agent -> UI    | `HANDSHAKE` | `{ "pid": 1234, "project": "/src" }`      | Session initiation       |
-| Agent -> UI    | `STATUS`    | `{ "state": "thinking", "cost": 0.05 }`   | State update             |
-| Agent -> UI    | `TOOL_START`| `{ "tool": "bash", "input": {...} }`      | Tool execution started   |
-| Agent -> UI    | `TOOL_END`  | `{ "tool": "bash", "isError": false }`    | Tool execution ended     |
-| Agent -> UI    | `TOOL_REQ`  | `{ "id": "req_1", "cmd": "rm -rf /" }`    | Permission request       |
-| UI -> Agent    | `TOOL_RES`  | `{ "id": "req_1", "allow": false }`       | Permission verdict       |
-| UI -> Agent    | `INTERRUPT` | `{}`                                      | Stop current generation  |
-
-## Development
-
-### SwiftUI Best Practices
-
-This project follows SwiftUI best practices using these agent skills:
-
-- **swiftui-expert-skill** - State management (`@Observable`, `@State`), modern APIs, view composition
-- **swiftui-view-refactor** - View ordering, MV patterns, subview extraction
-- **swiftui-ui-patterns** - Component patterns, sheet handling, navigation
-- **swiftui-performance-audit** - Performance optimization, avoiding view invalidation storms
-- **swift-concurrency** - Async/await, actors, `@MainActor`, Sendable conformance
-
-Key patterns applied:
-- `@Observable` for view models (not `ObservableObject`)
-- `@MainActor` for UI-bound classes
-- `foregroundStyle()` instead of `foregroundColor()`
-- `clipShape(.rect(cornerRadius:))` instead of `cornerRadius()`
-- Extracted subviews for composition and performance
-- BSD sockets with `DispatchSource` for non-blocking I/O
-
-### Project Structure
+## Files
 
 ```
 PiIsland/
-  Package.swift              # Swift Package Manager config
   PiIsland/
-    PiIslandApp.swift        # App entry point
-    SocketServer.swift       # BSD socket server with DispatchSource
-    FloatingWindow.swift     # NotchPanel, NotchViewModel, SwiftUI views
-
-extension/
-  pi-island.ts               # Pi agent extension
-
-tests/
-  test-bridge.mjs            # Socket communication test
+    PiIslandApp.swift      # App entry, window controller, notch UI
+    RPC/
+      PiRPCClient.swift    # Process management, JSON protocol
+      RPCSession.swift     # High-level session state management
+      RPCChatView.swift    # Chat UI components
+      RPCTypes.swift       # Command and event types
 ```
-
-## Development Status
-
-See [PLAN.md](PLAN.md) for the implementation roadmap.
-
-### Phase 1: The Bridge - COMPLETE
-- [x] Swift Socket Server (BSD sockets + DispatchSource)
-- [x] TypeScript Connector (test script)
-- [x] Pi Extension scaffolding
-
-### Phase 2: The Sentinel - COMPLETE
-- [x] Event Streaming (STATUS, TOOL_START, TOOL_END)
-- [x] Blocking Mechanism (permission requests)
-- [x] Grant Loop (Allow/Deny responses)
-
-### Phase 3: The Interface - IN PROGRESS
-- [x] Floating Window (NotchPanel with proper window levels)
-- [x] Notch geometry detection (safe area insets)
-- [x] State Visualization (idle, thinking, executing, permission)
-- [ ] Hover Physics refinement
-- [ ] Click-Through edge cases
-
-### Phase 4: Integration & Hardening
-- [ ] Robust Reconnection
-- [ ] Installer Script
-- [ ] Documentation
 
 ## License
 
