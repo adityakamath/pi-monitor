@@ -14,3 +14,7 @@ node_modules/
 
 # Socket file
 /tmp/pi-island.sock
+
+# Artifacts
+Pi-Island-*.dmg
+Pi Island.app

@@ -55,10 +55,16 @@ actor PiRPCClient {
             return
         }
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        // Find pi executable using absolute path (works regardless of shell environment)
+        guard let piPath = await PiPathFinder.shared.getPiPath() else {
+            logger.error("pi executable not found")
+            throw RPCError.commandFailed("pi executable not found. Please install pi-coding-agent: npm install -g @mariozechner/pi-coding-agent")
+        }
 
-        var args = ["pi", "--mode", "rpc"]
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: piPath)
+
+        var args = ["--mode", "rpc"]
         if let provider = provider {
             args.append(contentsOf: ["--provider", provider])
         }
@@ -76,6 +82,11 @@ actor PiRPCClient {
         if let workingDirectory = workingDirectory {
             process.currentDirectoryURL = URL(fileURLWithPath: workingDirectory)
         }
+
+        // Use the resolved shell environment so pi has access to node, npm, etc.
+        let shellEnv = await PiPathFinder.shared.getEnvironment()
+        process.environment = shellEnv
+        logger.info("Environment PATH: \(shellEnv["PATH"] ?? "nil")")
 
         // Set up pipes
         let stdinPipe = Pipe()
@@ -113,11 +124,20 @@ actor PiRPCClient {
         self.stderrPipe = stderrPipe
 
         do {
+            logger.info("Launching pi from: \(piPath)")
+            logger.info("Arguments: \(args.joined(separator: " "))")
             try process.run()
             isRunning = true
             logger.info("Started Pi RPC process (PID: \(process.processIdentifier))")
-        } catch {
+        } catch let error as NSError {
             logger.error("Failed to start process: \(error.localizedDescription)")
+            logger.error("Error domain: \(error.domain), code: \(error.code)")
+            if let underlying = error.userInfo[NSUnderlyingErrorKey] as? Error {
+                logger.error("Underlying error: \(underlying)")
+            }
+            throw error
+        } catch {
+            logger.error("Failed to start process: \(error)")
             throw error
         }
     }

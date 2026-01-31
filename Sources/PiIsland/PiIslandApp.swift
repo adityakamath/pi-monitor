@@ -12,8 +12,8 @@ import OSLog
 private let logger = Logger(subsystem: "com.pi-island", category: "App")
 
 // MARK: - App Entry Point
+// Note: @main is NOT used here - see main.swift for custom entry point
 
-@main
 struct PiIslandApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
@@ -32,7 +32,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var sessionManager: SessionManager?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Apply dock visibility preference
+        // Re-apply activation policy (SwiftUI may have overridden it)
         let showInDock = UserDefaults.standard.bool(forKey: "showInDock")
         NSApp.setActivationPolicy(showInDock ? .regular : .accessory)
 

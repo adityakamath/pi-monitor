@@ -74,9 +74,9 @@ class NotchWindowController: NSWindowController {
                 switch status {
                 case .opened:
                     notchWindow?.ignoresMouseEvents = false
+                    // Make window key and order front for input
                     if viewModel?.openReason != .notification {
-                        NSApp.activate(ignoringOtherApps: false)
-                        notchWindow?.makeKey()
+                        notchWindow?.makeKeyAndOrderFront(nil)
                     }
                 case .closed, .popping:
                     notchWindow?.ignoresMouseEvents = true
@@ -109,11 +109,36 @@ class NotchPanel: NSPanel {
     ) {
         super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
 
-        level = .mainMenu + 3
+        // Floating panel behavior - critical for proper click handling
+        isFloatingPanel = true
+        becomesKeyOnlyIfNeeded = false  // Must be false to accept clicks when launched from Finder
+
+        // Transparent configuration
         isOpaque = false
+        titleVisibility = .hidden
+        titlebarAppearsTransparent = true
         backgroundColor = .clear
         hasShadow = false
-        collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+
+        // Prevent window from moving
+        isMovable = false
+
+        // Window behavior - stays on all spaces, above menu bar
+        collectionBehavior = [
+            .fullScreenAuxiliary,
+            .stationary,
+            .canJoinAllSpaces,
+            .ignoresCycle
+        ]
+
+        // Above the menu bar
+        level = .mainMenu + 3
+
+        // Enable tooltips even when app is inactive
+        allowsToolTipsWhenApplicationIsInactive = true
+
+        isReleasedWhenClosed = true
+        acceptsMouseMovedEvents = false
     }
 
     override var canBecomeKey: Bool { true }

@@ -57,10 +57,61 @@ pi --mode rpc (child process)
 
 ## Building
 
+### Development (Debug)
+
 ```bash
 swift build
 .build/debug/PiIsland
 ```
+
+### Production (App Bundle)
+
+Create a proper macOS `.app` bundle with icon and LSUIElement support:
+
+```bash
+./scripts/bundle.sh
+```
+
+This generates `Pi Island.app` with:
+- Proper app icon from `pi-island.icon` (Xcode 15+ Icon Composer format)
+- `LSUIElement: true` - no dock icon by default, no terminal on launch
+- All resources bundled correctly
+- Login shell environment extraction (works when launched from Finder)
+
+### Creating a DMG for Distribution
+
+```bash
+# Build + ad-hoc sign + create DMG (for local/trusted distribution)
+./scripts/bundle.sh --sign --dmg
+
+# Build + sign with Developer ID + create DMG (for public distribution)
+./scripts/bundle.sh --sign-id "Developer ID Application: Your Name" --dmg
+```
+
+This creates `Pi-Island-0.1.0.dmg` with the app and Applications shortcut.
+
+**Note:** Without a Developer ID certificate, recipients may see "damaged" error. They can bypass this by running:
+```bash
+xattr -cr "/Applications/Pi Island.app"
+```
+
+### Installation
+
+From DMG:
+1. Open `Pi-Island-0.1.0.dmg`
+2. Drag `Pi Island` to the `Applications` folder
+
+Or manually:
+```bash
+cp -R "Pi Island.app" /Applications/
+```
+
+### Auto-launch at Login
+
+1. Open **System Settings > General > Login Items**
+2. Click **+** and add **Pi Island** from Applications
+
+The app will launch silently without opening a terminal window.
 
 ## Usage
 

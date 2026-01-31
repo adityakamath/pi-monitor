@@ -1,3 +1,4 @@
+import MarkdownUI
 import SwiftUI
 
 // MARK: - SessionChatView
@@ -223,7 +224,7 @@ private struct AssistantBubble: View {
     @State private var isExpanded = false
 
     private var isLong: Bool {
-        text.count > 300 || text.components(separatedBy: "\n").count > 6
+        text.count > 500 || text.components(separatedBy: "\n").count > 10
     }
 
     var body: some View {
@@ -234,16 +235,17 @@ private struct AssistantBubble: View {
                     .frame(width: 6, height: 6)
                     .padding(.top, 4)
 
-                Text(text)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.9))
-                    .lineLimit(isExpanded ? nil : 6)
+                VStack(alignment: .leading, spacing: 0) {
+                    // Always use Markdown for syntax highlighting
+                    Markdown(isExpanded || !isLong ? text : truncatedText)
+                        .markdownTheme(.piIsland)
+                }
 
                 Spacer(minLength: 40)
             }
 
             if isLong {
-                Button(action: { isExpanded.toggle() }) {
+                Button(action: { withAnimation { isExpanded.toggle() } }) {
                     HStack(spacing: 4) {
                         Text(isExpanded ? "Show less" : "Show more")
                             .font(.system(size: 10))
@@ -256,6 +258,34 @@ private struct AssistantBubble: View {
                 .padding(.leading, 12)
             }
         }
+    }
+
+    private var truncatedText: String {
+        let lines = text.components(separatedBy: "\n")
+        let maxLines = 8
+
+        if lines.count <= maxLines {
+            return text
+        }
+
+        var result = Array(lines.prefix(maxLines))
+
+        // Check if we're cutting inside a code block
+        var inCodeBlock = false
+        for line in result {
+            if line.hasPrefix("```") {
+                inCodeBlock.toggle()
+            }
+        }
+
+        // Close unclosed code block
+        if inCodeBlock {
+            result.append("```")
+        }
+
+        result.append("...")
+
+        return result.joined(separator: "\n")
     }
 }
 
@@ -314,7 +344,6 @@ private struct ToolRow: View {
 
             if isExpanded, let result = message.toolResult {
                 ToolResultView(result: result, toolName: message.toolName ?? "")
-                    .padding(.leading, 12)
             }
         }
         .padding(.vertical, 2)
@@ -326,44 +355,244 @@ private struct ToolRow: View {
 private struct ToolResultView: View {
     let result: String
     let toolName: String
+    @State private var isFullyExpanded = false
 
     private var lines: [String] {
         result.components(separatedBy: "\n")
     }
 
+    private var collapsedLineCount: Int { 12 }
+
     private var displayLines: [String] {
-        Array(lines.prefix(12))
+        if isFullyExpanded {
+            return lines
+        } else {
+            return Array(lines.prefix(collapsedLineCount))
+        }
+    }
+
+    private var language: String {
+        // Detect language from tool name or content
+        switch toolName.lowercased() {
+        case "read":
+            return detectLanguageFromContent()
+        case "bash":
+            return "bash"
+        default:
+            return "text"
+        }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(displayLines.enumerated()), id: \.offset) { index, line in
-                HStack(spacing: 0) {
-                    if toolName == "read" || toolName == "bash" {
-                        Text("\(index + 1)")
-                            .font(.system(size: 9, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.2))
-                            .frame(width: 24, alignment: .trailing)
-                            .padding(.trailing, 6)
-                    }
-
-                    Text(line.isEmpty ? " " : line)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(isErrorLine(line) ? .red.opacity(0.8) : .white.opacity(0.5))
-                        .lineLimit(1)
+            // Header with language and copy button
+            HStack {
+                Text(language)
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.5))
+                Spacer()
+                Button(action: copyResult) {
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.white.opacity(0.4))
                 }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.white.opacity(0.08))
+
+            // Code content
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: 0) {
+                    // Line numbers
+                    VStack(alignment: .trailing, spacing: 0) {
+                        ForEach(Array(displayLines.enumerated()), id: \.offset) { index, _ in
+                            Text("\(index + 1)")
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundStyle(.white.opacity(0.25))
+                                .frame(height: 15)
+                        }
+                    }
+                    .padding(.trailing, 8)
+                    .padding(.leading, 8)
+
+                    Divider()
+                        .frame(width: 1)
+                        .background(Color.white.opacity(0.1))
+
+                    // Code lines with highlighting
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(displayLines.enumerated()), id: \.offset) { _, line in
+                            highlightedLine(line)
+                                .frame(height: 15, alignment: .leading)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                }
+                .padding(.vertical, 6)
             }
 
-            if lines.count > 12 {
-                Text("... (\(lines.count - 12) more lines)")
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.3))
-                    .padding(.top, 2)
+            // Expand/collapse button
+            if lines.count > collapsedLineCount {
+                Button(action: { withAnimation { isFullyExpanded.toggle() } }) {
+                    HStack(spacing: 4) {
+                        Text(isFullyExpanded ? "Show less" : "Show all \(lines.count) lines")
+                            .font(.system(size: 9, design: .monospaced))
+                        Image(systemName: isFullyExpanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 8))
+                    }
+                    .foregroundStyle(.blue.opacity(0.7))
+                    .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.plain)
+                .background(Color.white.opacity(0.05))
             }
         }
-        .padding(6)
-        .background(Color.white.opacity(0.03))
-        .clipShape(.rect(cornerRadius: 4))
+        .background(Color.black.opacity(0.4))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+        )
+    }
+
+    private func copyResult() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(result, forType: .string)
+    }
+
+    @ViewBuilder
+    private func highlightedLine(_ line: String) -> some View {
+        Text(attributedLine(line))
+            .font(.system(size: 10, design: .monospaced))
+    }
+
+    private func attributedLine(_ line: String) -> AttributedString {
+        var result = AttributedString(line.isEmpty ? " " : line)
+
+        // Check for error lines first
+        if isErrorLine(line) {
+            result.foregroundColor = .red.opacity(0.8)
+            return result
+        }
+
+        result.foregroundColor = .white.opacity(0.7)
+
+        // Apply syntax highlighting based on detected language
+        applyHighlighting(to: &result, line: line)
+
+        return result
+    }
+
+    private func applyHighlighting(to result: inout AttributedString, line: String) {
+        let lang = language.lowercased()
+
+        switch lang {
+        case "swift":
+            highlightSwift(in: &result, line: line)
+        case "json":
+            highlightJSON(in: &result, line: line)
+        case "bash", "shell", "sh":
+            highlightBash(in: &result, line: line)
+        case "python", "py":
+            highlightPython(in: &result, line: line)
+        default:
+            highlightGeneric(in: &result, line: line)
+        }
+    }
+
+    private func highlightSwift(in result: inout AttributedString, line: String) {
+        let keywords = ["func", "var", "let", "if", "else", "guard", "return", "import", "struct", "class", "enum", "protocol", "extension", "private", "public", "static", "override", "async", "await", "try", "catch", "for", "while", "switch", "case", "default", "break", "continue", "self", "nil", "true", "false", "@State", "@Binding", "@Observable", "@MainActor", "some", "any", "init"]
+        let types = ["String", "Int", "Bool", "Double", "Array", "Dictionary", "View", "Text", "VStack", "HStack", "Button", "Color"]
+
+        for kw in keywords {
+            highlightPattern(in: &result, line: line, pattern: "\\b\(kw)\\b", color: .pink.opacity(0.9))
+        }
+        for t in types {
+            highlightPattern(in: &result, line: line, pattern: "\\b\(t)\\b", color: .cyan.opacity(0.9))
+        }
+        highlightPattern(in: &result, line: line, pattern: "\"[^\"]*\"", color: .green.opacity(0.9))
+        highlightPattern(in: &result, line: line, pattern: "\\b\\d+(\\.\\d+)?\\b", color: .orange.opacity(0.9))
+        highlightPattern(in: &result, line: line, pattern: "//.*$", color: .white.opacity(0.4))
+    }
+
+    private func highlightJSON(in result: inout AttributedString, line: String) {
+        // JSON keys (quoted strings followed by colon)
+        highlightPattern(in: &result, line: line, pattern: "\"[^\"]+\"\\s*:", color: .cyan.opacity(0.9))
+        // JSON string values
+        highlightPattern(in: &result, line: line, pattern: ":\\s*\"[^\"]*\"", color: .green.opacity(0.9))
+        // Numbers
+        highlightPattern(in: &result, line: line, pattern: ":\\s*\\d+(\\.\\d+)?", color: .orange.opacity(0.9))
+        // Booleans and null
+        highlightPattern(in: &result, line: line, pattern: "\\b(true|false|null)\\b", color: .pink.opacity(0.9))
+    }
+
+    private func highlightBash(in result: inout AttributedString, line: String) {
+        let keywords = ["if", "then", "else", "fi", "for", "do", "done", "while", "case", "esac", "function", "return", "exit", "export", "local", "echo", "cd", "ls", "rm", "cp", "mv", "mkdir", "cat", "grep", "sed", "awk", "find"]
+        for kw in keywords {
+            highlightPattern(in: &result, line: line, pattern: "\\b\(kw)\\b", color: .pink.opacity(0.9))
+        }
+        highlightPattern(in: &result, line: line, pattern: "\"[^\"]*\"", color: .green.opacity(0.9))
+        highlightPattern(in: &result, line: line, pattern: "'[^']*'", color: .green.opacity(0.9))
+        highlightPattern(in: &result, line: line, pattern: "\\$\\w+", color: .cyan.opacity(0.9))
+        highlightPattern(in: &result, line: line, pattern: "#.*$", color: .white.opacity(0.4))
+    }
+
+    private func highlightPython(in result: inout AttributedString, line: String) {
+        let keywords = ["def", "class", "if", "elif", "else", "for", "while", "return", "import", "from", "as", "try", "except", "with", "lambda", "yield", "raise", "pass", "break", "continue", "and", "or", "not", "in", "is", "None", "True", "False", "self", "async", "await"]
+        for kw in keywords {
+            highlightPattern(in: &result, line: line, pattern: "\\b\(kw)\\b", color: .pink.opacity(0.9))
+        }
+        highlightPattern(in: &result, line: line, pattern: "\"[^\"]*\"", color: .green.opacity(0.9))
+        highlightPattern(in: &result, line: line, pattern: "'[^']*'", color: .green.opacity(0.9))
+        highlightPattern(in: &result, line: line, pattern: "\\b\\d+(\\.\\d+)?\\b", color: .orange.opacity(0.9))
+        highlightPattern(in: &result, line: line, pattern: "#.*$", color: .white.opacity(0.4))
+    }
+
+    private func highlightGeneric(in result: inout AttributedString, line: String) {
+        highlightPattern(in: &result, line: line, pattern: "\"[^\"]*\"", color: .green.opacity(0.9))
+        highlightPattern(in: &result, line: line, pattern: "\\b\\d+(\\.\\d+)?\\b", color: .orange.opacity(0.9))
+    }
+
+    private func highlightPattern(in result: inout AttributedString, line: String, pattern: String, color: Color) {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return }
+        let range = NSRange(line.startIndex..., in: line)
+        let matches = regex.matches(in: line, options: [], range: range)
+
+        for match in matches {
+            guard let swiftRange = Range(match.range, in: line) else { continue }
+            let startOffset = line.distance(from: line.startIndex, to: swiftRange.lowerBound)
+            let endOffset = line.distance(from: line.startIndex, to: swiftRange.upperBound)
+
+            let attrStart = result.index(result.startIndex, offsetByCharacters: startOffset)
+            let attrEnd = result.index(result.startIndex, offsetByCharacters: endOffset)
+
+            if attrStart < attrEnd {
+                result[attrStart..<attrEnd].foregroundColor = color
+            }
+        }
+    }
+
+    private func detectLanguageFromContent() -> String {
+        let firstLine = lines.first ?? ""
+        let content = result.lowercased()
+
+        // Check for JSON
+        if firstLine.trimmingCharacters(in: .whitespaces).hasPrefix("{") ||
+           firstLine.trimmingCharacters(in: .whitespaces).hasPrefix("[") {
+            return "json"
+        }
+        // Check for Swift
+        if content.contains("import ") || content.contains("func ") || content.contains("struct ") || content.contains("class ") {
+            return "swift"
+        }
+        // Check for Python
+        if content.contains("def ") || content.contains("import ") && content.contains(":") {
+            return "python"
+        }
+        return "text"
     }
 
     private func isErrorLine(_ line: String) -> Bool {
@@ -437,9 +666,8 @@ private struct StreamingMessageView: View {
                 .padding(.top, 4)
                 .opacity(0.8)
 
-            Text(text)
-                .font(.system(size: 11))
-                .foregroundStyle(.white.opacity(0.9))
+            Markdown(text)
+                .markdownTheme(.piIsland)
 
             // Cursor
             Rectangle()
