@@ -42,6 +42,17 @@ struct NotchGeometry: Sendable {
         notchScreenRect.insetBy(dx: -10, dy: -5).contains(point)
     }
 
+    /// Check if a point is in the hint area (wider than notch)
+    func isPointInHintArea(_ point: CGPoint, hintSize: CGSize) -> Bool {
+        let hintRect = CGRect(
+            x: screenRect.midX - hintSize.width / 2,
+            y: screenRect.maxY - hintSize.height,
+            width: hintSize.width,
+            height: hintSize.height
+        )
+        return hintRect.insetBy(dx: -10, dy: -5).contains(point)
+    }
+
     /// Check if a point is in the opened panel area
     func isPointInOpenedPanel(_ point: CGPoint, size: CGSize) -> Bool {
         openedScreenRect(for: size).contains(point)

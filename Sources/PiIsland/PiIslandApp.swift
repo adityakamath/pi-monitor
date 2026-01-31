@@ -52,15 +52,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Create status bar
         statusBarController = StatusBarController(sessionManager: sessionManager!)
 
-        // Load historical sessions
+        // Load historical sessions and start file watching
         Task { @MainActor in
             await sessionManager?.loadHistoricalSessions()
+            sessionManager?.startWatching()
         }
 
         logger.info("Pi Island started")
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        sessionManager?.stopWatching()
+
         Task {
             if let manager = sessionManager {
                 for session in manager.liveSessions {

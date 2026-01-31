@@ -12,7 +12,7 @@ import SwiftUI
 enum NotchStatus: Equatable {
     case closed
     case opened
-    case popping
+    case hint  // Subtle horizontal expansion to indicate unread response
 }
 
 enum NotchOpenReason {
@@ -92,6 +92,11 @@ class NotchViewModel: ObservableObject {
         )
     }
 
+    /// Size of the hint state - same as closed (no width change)
+    var hintNotchSize: CGSize {
+        closedNotchSize
+    }
+
     // MARK: - Animation
 
     var animation: Animation {
@@ -103,7 +108,11 @@ class NotchViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private let events = EventMonitors.shared
     private var hoverTimer: DispatchWorkItem?
+    private var hintTimer: DispatchWorkItem?
     private var currentChatSession: ManagedSession?
+
+    /// Session that has an unread response
+    private(set) var unreadSession: ManagedSession?
 
     // MARK: - Initialization
 
@@ -112,6 +121,33 @@ class NotchViewModel: ObservableObject {
         self.hasPhysicalNotch = hasPhysicalNotch
         self.sessionManager = sessionManager
         setupEventHandlers()
+        setupAgentCompletionHandler()
+    }
+
+    private func setupAgentCompletionHandler() {
+        sessionManager.onAgentCompleted = { [weak self] session in
+            guard let self = self else { return }
+            self.handleSessionActivity(session)
+        }
+
+        sessionManager.onExternalSessionUpdated = { [weak self] session in
+            guard let self = self else { return }
+            self.handleSessionActivity(session)
+        }
+    }
+
+    private func handleSessionActivity(_ session: ManagedSession) {
+        // Only show hint if notch is closed and we're not viewing this session
+        guard self.status == .closed else { return }
+
+        if case .chat(let currentSession) = self.contentType,
+           currentSession.id == session.id {
+            // Currently viewing this session, don't show hint
+            return
+        }
+
+        // Show the hint animation
+        self.notchHint(for: session)
     }
 
     // MARK: - Event Handling
@@ -156,7 +192,7 @@ class NotchViewModel: ObservableObject {
         hoverTimer = nil
 
         // Start hover timer to auto-expand after 1 second
-        if isHovering && (status == .closed || status == .popping) {
+        if isHovering && (status == .closed || status == .hint) {
             let workItem = DispatchWorkItem { [weak self] in
                 guard let self = self, self.isHovering else { return }
                 Task { @MainActor in
@@ -181,8 +217,10 @@ class NotchViewModel: ObservableObject {
                     notchClose()
                 }
             }
-        case .closed, .popping:
-            if geometry.isPointInNotch(location) {
+        case .closed, .hint:
+            if geometry.isPointInNotch(location) || geometry.isPointInHintArea(location, hintSize: hintNotchSize) {
+                // Clear unread state when opening
+                unreadSession = nil
                 notchOpen(reason: .click)
             }
         }
@@ -218,6 +256,13 @@ class NotchViewModel: ObservableObject {
     // MARK: - Actions
 
     func notchOpen(reason: NotchOpenReason = .unknown) {
+        // Clear hint timer if active
+        hintTimer?.cancel()
+        hintTimer = nil
+
+        // Clear unread state when opening
+        unreadSession = nil
+
         openReason = reason
         status = .opened
 
@@ -239,20 +284,48 @@ class NotchViewModel: ObservableObject {
         contentType = .sessions
     }
 
-    func notchPop() {
+    /// Show a subtle hint that there's an unread response
+    func notchHint(for session: ManagedSession) {
         guard status == .closed else { return }
-        status = .popping
+
+        // Cancel any existing hint timer
+        hintTimer?.cancel()
+
+        unreadSession = session
+        status = .hint
+
+        // Auto-collapse after 3 seconds
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self = self, self.status == .hint else { return }
+            self.notchUnhint()
+        }
+        hintTimer = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: workItem)
     }
 
-    func notchUnpop() {
-        guard status == .popping else { return }
+    func notchUnhint() {
+        guard status == .hint else { return }
+        hintTimer?.cancel()
+        hintTimer = nil
         status = .closed
+    }
+
+    /// Clear unread state for a session
+    func clearUnread(for session: ManagedSession) {
+        if unreadSession?.id == session.id {
+            unreadSession = nil
+            if status == .hint {
+                notchUnhint()
+            }
+        }
     }
 
     func showChat(for session: ManagedSession) {
         if case .chat(let current) = contentType, current.id == session.id {
             return
         }
+        // Clear unread state when viewing session
+        clearUnread(for: session)
         contentType = .chat(session)
         sessionManager.selectedSessionId = session.id
     }

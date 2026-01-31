@@ -54,19 +54,41 @@ struct PiLogoShape: Shape {
 struct PiLogo: View {
     let size: CGFloat
     var isAnimating: Bool = false
+    var isPulsing: Bool = false  // For hint state - gentler pulse
     var color: Color = .white
-    
+
     var body: some View {
         PiLogoShape()
-            .fill(color.opacity(isAnimating ? 1.0 : 0.6), style: FillStyle(eoFill: true))
+            .fill(color.opacity(effectiveOpacity), style: FillStyle(eoFill: true))
             .frame(width: size, height: size)
-            .scaleEffect(isAnimating ? 1.1 : 1.0)
-            .animation(
-                isAnimating 
-                    ? .easeInOut(duration: 0.6).repeatForever(autoreverses: true) 
-                    : .default, 
-                value: isAnimating
-            )
+            .scaleEffect(effectiveScale)
+            .animation(effectiveAnimation, value: isAnimating)
+            .animation(effectiveAnimation, value: isPulsing)
+    }
+
+    private var effectiveOpacity: Double {
+        if isAnimating || isPulsing {
+            return 1.0
+        }
+        return 0.6
+    }
+
+    private var effectiveScale: CGFloat {
+        if isAnimating {
+            return 1.1
+        } else if isPulsing {
+            return 1.15
+        }
+        return 1.0
+    }
+
+    private var effectiveAnimation: Animation {
+        if isAnimating {
+            return .easeInOut(duration: 0.6).repeatForever(autoreverses: true)
+        } else if isPulsing {
+            return .easeInOut(duration: 0.8).repeatForever(autoreverses: true)
+        }
+        return .default
     }
 }
 

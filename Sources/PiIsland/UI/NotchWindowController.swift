@@ -78,7 +78,7 @@ class NotchWindowController: NSWindowController {
                     if viewModel?.openReason != .notification {
                         notchWindow?.makeKeyAndOrderFront(nil)
                     }
-                case .closed, .popping:
+                case .closed, .hint:
                     notchWindow?.ignoresMouseEvents = true
                 }
             }

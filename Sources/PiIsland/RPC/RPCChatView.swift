@@ -47,7 +47,10 @@ struct SessionChatView: View {
                     .padding(.vertical, 8)
                 }
                 .onAppear {
-                    proxy.scrollTo("bottom", anchor: .bottom)
+                    // Instant scroll to bottom (no animation)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        proxy.scrollTo("bottom", anchor: .bottom)
+                    }
                 }
                 .onChange(of: session.messages.count) {
                     withAnimation {
@@ -84,28 +87,28 @@ struct SessionChatView: View {
 
             Spacer()
 
-            // Model selector
+            // Model selector (live) or model badge (historical)
             if session.isLive {
                 ModelSelectorButton(session: session)
             } else if let model = session.model {
                 Text(model.displayName)
-                    .font(.system(size: 9))
-                    .foregroundStyle(.white.opacity(0.6))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.5))
                     .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.white.opacity(0.1))
-                    .clipShape(.rect(cornerRadius: 4))
+                    .padding(.vertical, 4)
+                    .background(Color.white.opacity(0.08))
+                    .clipShape(.rect(cornerRadius: 6))
             }
 
             // Thinking level badge (only for models that support reasoning)
             if session.isLive, session.model?.reasoning == true {
                 Text(session.thinkingLevel.rawValue)
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.7))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.5))
                     .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.white.opacity(0.1))
-                    .clipShape(.rect(cornerRadius: 4))
+                    .padding(.vertical, 4)
+                    .background(Color.white.opacity(0.08))
+                    .clipShape(.rect(cornerRadius: 6))
                     .onTapGesture {
                         Task { await session.cycleThinkingLevel() }
                     }
@@ -753,24 +756,20 @@ private struct ModelSelectorButton: View {
             }
         } label: {
             HStack(spacing: 4) {
-                if let model = session.model {
-                    Text(model.displayName)
-                } else {
-                    Text("Select Model")
-                }
+                Text(session.model?.displayName ?? "Select Model")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.5))
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 7, weight: .bold))
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.5))
             }
-            .font(.system(size: 9))
-            .foregroundStyle(.white.opacity(0.7))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(Color.white.opacity(0.1))
-            .clipShape(.rect(cornerRadius: 4))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
-        .fixedSize()
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .background(Color.white.opacity(0.08))
+        .clipShape(.rect(cornerRadius: 6))
     }
 
     private var sortedProviders: [String] {

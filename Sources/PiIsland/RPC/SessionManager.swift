@@ -13,6 +13,18 @@ class SessionManager {
     /// Currently selected session ID
     var selectedSessionId: String?
 
+    /// Callback when an agent completes a response (for hint animations)
+    var onAgentCompleted: ((ManagedSession) -> Void)?
+
+    /// Callback when an external session is updated (for hint animations)
+    var onExternalSessionUpdated: ((ManagedSession) -> Void)?
+
+    /// File watcher for real-time session updates
+    private let fileWatcher = SessionFileWatcher()
+
+    /// Maps session file paths to session IDs for quick lookup
+    private var sessionFileIndex: [String: String] = [:]
+
     /// The currently selected session
     var selectedSession: ManagedSession? {
         guard let id = selectedSessionId else { return nil }
@@ -51,6 +63,12 @@ class SessionManager {
             workingDirectory: workingDirectory,
             isLive: true
         )
+
+        // Set up callback for visual hints
+        session.onAgentCompleted = { [weak self, weak session] in
+            guard let self = self, let session = session else { return }
+            self.onAgentCompleted?(session)
+        }
 
         sessions[session.id] = session
 
@@ -92,6 +110,13 @@ class SessionManager {
             return nil
         }
 
+        // Check if there's already a live session for this working directory
+        if let existingLive = liveSessions.first(where: { $0.workingDirectory == session.workingDirectory }) {
+            logger.info("Found existing live session for \(session.workingDirectory), reusing it")
+            selectedSessionId = existingLive.id
+            return existingLive
+        }
+
         // Remove the historical session since we're resuming it
         sessions.removeValue(forKey: session.id)
 
@@ -102,6 +127,12 @@ class SessionManager {
             isLive: true
         )
 
+        // Set up callback for visual hints
+        newSession.onAgentCompleted = { [weak self, weak newSession] in
+            guard let self = self, let session = newSession else { return }
+            self.onAgentCompleted?(session)
+        }
+
         // Copy messages from historical session
         newSession.messages = session.messages
         newSession.model = session.model
@@ -110,14 +141,209 @@ class SessionManager {
 
         sessions[newSession.id] = newSession
 
+        // Update the file index to point to the new session
+        sessionFileIndex[sessionFile] = newSession.id
+
         // Start with the session file to resume
         logger.info("Starting new session with resumeSessionFile: \(sessionFile)")
         await newSession.start(resumeSessionFile: sessionFile)
+
+        // Clean up any remaining duplicates
+        cleanupDuplicateSessions()
 
         selectedSessionId = newSession.id
 
         logger.info("Resumed session from \(sessionFile), messages count: \(newSession.messages.count)")
         return newSession
+    }
+
+    /// Refresh sessions by cleaning up duplicates and stale data
+    func refreshSessions() {
+        cleanupDuplicateSessions()
+        cleanupErroredSessions()
+    }
+
+    /// Remove errored live sessions that are no longer useful
+    private func cleanupErroredSessions() {
+        var toRemove: [String] = []
+        for (id, session) in sessions where session.isLive {
+            if case .error = session.phase {
+                // Check if there's another healthy live session for the same project
+                let hasHealthySession = liveSessions.contains { other in
+                    guard other.id != id else { return false }
+                    guard other.workingDirectory == session.workingDirectory else { return false }
+                    if case .error = other.phase { return false }
+                    return true
+                }
+                if hasHealthySession {
+                    toRemove.append(id)
+                }
+            }
+        }
+
+        for id in toRemove {
+            if let session = sessions[id] {
+                Task {
+                    await session.stop()
+                }
+            }
+            sessions.removeValue(forKey: id)
+            logger.info("Removed errored duplicate session: \(id)")
+        }
+    }
+
+    /// Start watching for file system changes
+    func startWatching() {
+        setupFileWatcherCallbacks()
+        fileWatcher.startWatching()
+    }
+
+    /// Stop watching for file system changes
+    func stopWatching() {
+        fileWatcher.stopWatching()
+    }
+
+    private func setupFileWatcherCallbacks() {
+        fileWatcher.onSessionCreated = { [weak self] (url: URL) in
+            Task { @MainActor in
+                self?.cleanupDuplicateSessions()
+                await self?.handleSessionFileCreated(url)
+            }
+        }
+
+        fileWatcher.onSessionModified = { [weak self] (url: URL) in
+            Task { @MainActor in
+                self?.cleanupDuplicateSessions()
+                await self?.handleSessionFileModified(url)
+            }
+        }
+
+        fileWatcher.onSessionDeleted = { [weak self] (url: URL) in
+            Task { @MainActor in
+                self?.handleSessionFileDeleted(url)
+            }
+        }
+    }
+
+    /// Remove historical sessions that have the same file path as a live session
+    private func cleanupDuplicateSessions() {
+        let liveFilePaths = Set(liveSessions.compactMap { $0.sessionFile })
+
+        // Find historical sessions with the same file paths
+        var toRemove: [String] = []
+        for (id, session) in sessions where !session.isLive {
+            if let path = session.sessionFile, liveFilePaths.contains(path) {
+                toRemove.append(id)
+            }
+        }
+
+        // Remove duplicates
+        for id in toRemove {
+            sessions.removeValue(forKey: id)
+            logger.info("Removed duplicate historical session: \(id)")
+        }
+
+        // Also clean up the file index
+        for (path, id) in sessionFileIndex {
+            if toRemove.contains(id) {
+                sessionFileIndex.removeValue(forKey: path)
+            }
+        }
+    }
+
+    private func handleSessionFileCreated(_ url: URL) async {
+        let filePath = url.path
+
+        // Skip if this file is already used by a live session
+        let usedByLive = liveSessions.contains { $0.sessionFile == filePath }
+        if usedByLive {
+            logger.debug("Skipping new file that belongs to live session: \(filePath)")
+            return
+        }
+
+        // Skip if already indexed
+        if sessionFileIndex[filePath] != nil {
+            return
+        }
+
+        // Parse the new session file
+        if let session = await parseSessionFile(url) {
+            // Don't overwrite existing sessions
+            if sessions[session.id] == nil {
+                sessions[session.id] = session
+                sessionFileIndex[filePath] = session.id
+                logger.info("Added new session from file: \(session.projectName)")
+            }
+        }
+    }
+
+    private func handleSessionFileModified(_ url: URL) async {
+        let filePath = url.path
+
+        // First, check if any live session is using this file
+        // (live sessions manage their own state via RPC, skip them)
+        for session in liveSessions {
+            if session.sessionFile == filePath {
+                logger.debug("Skipping update for live session file: \(filePath)")
+                return
+            }
+        }
+
+        // Find the session for this file by path
+        if let sessionId = sessionFileIndex[filePath],
+           let existingSession = sessions[sessionId] {
+            // Re-parse the file to get updated content
+            if let updatedSession = await parseSessionFile(url) {
+                // Update the existing session's data
+                let previousMessageCount = existingSession.messages.count
+                existingSession.messages = updatedSession.messages
+                existingSession.lastActivity = updatedSession.lastActivity
+                existingSession.model = updatedSession.model
+                existingSession.fileModificationDate = updatedSession.fileModificationDate
+
+                // Check if there are new messages
+                if existingSession.messages.count > previousMessageCount {
+                    logger.info("Session \(existingSession.projectName) has new messages (\(previousMessageCount) -> \(existingSession.messages.count))")
+                    // Notify for visual hint (external activity)
+                    onExternalSessionUpdated?(existingSession)
+                }
+            }
+        } else {
+            // Unknown file - check if we should add it
+            // First, verify no other session already references this file
+            let existingByPath = sessions.values.first { $0.sessionFile == filePath }
+            if existingByPath != nil {
+                // Already have this session, just not indexed - fix the index
+                sessionFileIndex[filePath] = existingByPath!.id
+                return
+            }
+
+            // Parse and add if it's a genuinely new session
+            if let session = await parseSessionFile(url) {
+                sessions[session.id] = session
+                sessionFileIndex[filePath] = session.id
+                logger.info("Added session from modified file: \(session.projectName)")
+            }
+        }
+    }
+
+    private func handleSessionFileDeleted(_ url: URL) {
+        let filePath = url.path
+
+        // Find and remove the session
+        if let sessionId = sessionFileIndex[filePath] {
+            // Don't remove live sessions
+            if let session = sessions[sessionId], !session.isLive {
+                sessions.removeValue(forKey: sessionId)
+                sessionFileIndex.removeValue(forKey: filePath)
+                logger.info("Removed session for deleted file: \(filePath)")
+
+                // Clear selection if needed
+                if selectedSessionId == sessionId {
+                    selectedSessionId = liveSessions.first?.id
+                }
+            }
+        }
     }
 
     /// Load historical sessions from JSONL files
@@ -152,10 +378,24 @@ class SessionManager {
                 }
 
                 for file in sortedFiles.prefix(3) {
+                    let filePath = file.path
+
+                    // Skip if this file is already used by a live session
+                    let usedByLive = liveSessions.contains { $0.sessionFile == filePath }
+                    if usedByLive {
+                        continue
+                    }
+
+                    // Skip if already indexed
+                    if sessionFileIndex[filePath] != nil {
+                        continue
+                    }
+
                     if let session = await parseSessionFile(file) {
-                        // Don't overwrite live sessions
+                        // Don't overwrite existing sessions
                         if sessions[session.id] == nil {
                             sessions[session.id] = session
+                            sessionFileIndex[filePath] = session.id
                         }
                     }
                 }
@@ -341,6 +581,9 @@ class ManagedSession: Identifiable, Equatable {
     // RPC client (only for live sessions)
     private var rpcClient: PiRPCClient?
 
+    /// Callback when agent completes a response (for visual hints)
+    var onAgentCompleted: (() -> Void)?
+
     var projectName: String {
         URL(fileURLWithPath: workingDirectory).lastPathComponent
     }
@@ -504,6 +747,8 @@ class ManagedSession: Identifiable, Equatable {
                 self?.phase = .idle
                 self?.isStreaming = false
                 self?.finalizeStreamingMessage()
+                // Notify for visual hint
+                self?.onAgentCompleted?()
             },
             onMessageUpdate: { [weak self] message, delta in
                 self?.handleMessageUpdate(delta)

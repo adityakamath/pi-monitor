@@ -23,8 +23,10 @@ struct NotchView: View {
 
     private var notchSize: CGSize {
         switch viewModel.status {
-        case .closed, .popping:
+        case .closed:
             return viewModel.closedNotchSize
+        case .hint:
+            return viewModel.hintNotchSize
         case .opened:
             return viewModel.openedSize
         }
@@ -54,6 +56,18 @@ struct NotchView: View {
     // Animation springs
     private let openAnimation = Animation.spring(response: 0.42, dampingFraction: 0.8, blendDuration: 0)
     private let closeAnimation = Animation.spring(response: 0.45, dampingFraction: 1.0, blendDuration: 0)
+    private let hintAnimation = Animation.spring(response: 0.5, dampingFraction: 0.7, blendDuration: 0)
+
+    private var animationForStatus: Animation {
+        switch viewModel.status {
+        case .opened:
+            return openAnimation
+        case .hint:
+            return hintAnimation
+        case .closed:
+            return closeAnimation
+        }
+    }
 
     // MARK: - Body
 
@@ -89,7 +103,7 @@ struct NotchView: View {
                         maxHeight: viewModel.status == .opened ? notchSize.height : nil,
                         alignment: .top
                     )
-                    .animation(viewModel.status == .opened ? openAnimation : closeAnimation, value: viewModel.status)
+                    .animation(animationForStatus, value: viewModel.status)
                     .animation(openAnimation, value: notchSize)
                     .contentShape(Rectangle())
                     .onHover { hovering in
@@ -154,12 +168,16 @@ struct NotchView: View {
         }
     }
 
+    private var isHintState: Bool {
+        viewModel.status == .hint
+    }
+
     @ViewBuilder
     private var headerRow: some View {
         HStack(spacing: 0) {
-            // Left side - Pi logo
+            // Left side - Pi logo (pulses when there's an unread message)
             HStack(spacing: 4) {
-                PiLogo(size: 14, isAnimating: hasActivity)
+                PiLogo(size: 14, isAnimating: hasActivity, isPulsing: isHintState)
             }
             .frame(width: viewModel.status == .opened ? nil : sideWidth)
             .padding(.leading, viewModel.status == .opened ? 8 : 0)
@@ -168,7 +186,7 @@ struct NotchView: View {
             if viewModel.status == .opened {
                 openedHeaderContent
             } else {
-                // Closed: black spacer
+                // Closed/Hint: black spacer
                 Rectangle()
                     .fill(.black)
                     .frame(width: viewModel.closedNotchSize.width - cornerRadiusInsets.closed.top)
@@ -235,14 +253,6 @@ struct NotchView: View {
                 .contentShape(Rectangle())
             }
 
-            // Model badge when in chat
-            if case .chat(let session) = viewModel.contentType,
-               let model = session.model {
-                Text(model.name ?? model.id)
-                    .font(.system(size: 9))
-                    .foregroundStyle(.white.opacity(0.4))
-                    .lineLimit(1)
-            }
         }
         .padding(.leading, 4)
     }
@@ -268,12 +278,12 @@ struct NotchView: View {
 
     private func handleStatusChange(from oldStatus: NotchStatus, to newStatus: NotchStatus) {
         switch newStatus {
-        case .opened, .popping:
+        case .opened, .hint:
             isVisible = true
         case .closed:
             guard viewModel.hasPhysicalNotch else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                if viewModel.status == .closed && !hasActivity {
+                if viewModel.status == .closed && !hasActivity && viewModel.unreadSession == nil {
                     isVisible = false
                 }
             }
@@ -441,7 +451,7 @@ private struct SettingsToggleRow: View {
 
 struct SessionsListView: View {
     @ObservedObject var viewModel: NotchViewModel
-    @Bindable var sessionManager: SessionManager
+    var sessionManager: SessionManager
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -492,6 +502,10 @@ struct SessionsListView: View {
             }
         }
         .padding(.top, 8)
+        .onAppear {
+            // Refresh session list when view appears
+            sessionManager.refreshSessions()
+        }
     }
 
     private func resumeHistoricalSession(_ session: ManagedSession) {
