@@ -71,6 +71,59 @@ class SessionManager {
         sessions.values.sorted { $0.lastActivity > $1.lastActivity }
     }
 
+    // MARK: - Activity State (for reactive animations)
+
+    /// Overall activity state combining all sessions
+    enum ActivityState: Equatable {
+        case idle
+        case thinking          // Live or external session thinking
+        case executing         // Tool execution
+        case externallyActive  // File modified recently
+        case error
+        
+        var shouldAnimate: Bool {
+            switch self {
+            case .idle: return false
+            case .thinking, .executing, .externallyActive, .error: return true
+            }
+        }
+    }
+
+    /// Current activity state for header animation (reactive, no polling needed)
+    var activityState: ActivityState {
+        // Check live sessions first (more accurate)
+        if liveSessions.contains(where: { $0.phase == .thinking }) {
+            return .thinking
+        }
+        if liveSessions.contains(where: { $0.phase == .executing }) {
+            return .executing
+        }
+        if liveSessions.contains(where: {
+            if case .error = $0.phase { return true }
+            return false
+        }) {
+            return .error
+        }
+
+        // Check external sessions
+        if historicalSessions.contains(where: { $0.isLikelyExecuting }) {
+            return .executing
+        }
+        if historicalSessions.contains(where: { $0.isLikelyThinking }) {
+            return .thinking
+        }
+        if historicalSessions.contains(where: { $0.isLikelyExternallyActive }) {
+            return .externallyActive
+        }
+
+        return .idle
+    }
+
+    /// True if any session has activity (for simpler checks)
+    var hasActivity: Bool {
+        activityState != .idle
+    }
+
     // MARK: - Session Lifecycle
 
     /// Create and start a new RPC session
@@ -311,7 +364,7 @@ class SessionManager {
             session.lastActivity = data.lastActivity
             session.sessionFile = filePath
             session.fileModificationDate = data.fileModificationDate
-            
+
             sessions[session.id] = session
             sessionFileIndex[filePath] = session.id
             logger.info("Added new session from file: \(session.projectName)")
@@ -333,6 +386,12 @@ class SessionManager {
                 }
                 logger.debug("[DEBUG] Live session found but idle, processing external update: \(filePath)")
             }
+        }
+
+        // Track rapid file changes for "executing" detection
+        if let sessionId = sessionFileIndex[filePath],
+           let session = sessions[sessionId] {
+            session.recordFileModification()
         }
 
         // Parse in background
@@ -443,7 +502,7 @@ class SessionManager {
                 at: sessionsDir,
                 includingPropertiesForKeys: [.isDirectoryKey]
             )
-            
+
             // Gather all candidate files first
             var candidateFiles: [URL] = []
 
@@ -461,32 +520,32 @@ class SessionManager {
                     let dateB = (try? b.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date.distantPast
                     return dateA > dateB
                 }
-                
+
                 // Keep top 3 per project
                 candidateFiles.append(contentsOf: sortedFiles.prefix(3))
             }
-            
+
             // Parse in parallel
             var loadedCount = 0
-            
+
             await withTaskGroup(of: SerializedSessionData?.self) { group in
                 for file in candidateFiles {
                     let filePath = file.path
-                    
+
                     // Skip if used by live session
                     if liveSessions.contains(where: { $0.sessionFile == filePath }) { continue }
-                    
+
                     // Skip if already indexed
                     if sessionFileIndex[filePath] != nil { continue }
-                    
+
                     group.addTask {
                         parseSessionFileBackground(file)
                     }
                 }
-                
+
                 for await sessionData in group {
                     guard let data = sessionData else { continue }
-                    
+
                     // Update on main actor
                     if sessions[data.id] == nil {
                         let session = ManagedSession(id: data.id, workingDirectory: data.workingDirectory, isLive: false)
@@ -494,7 +553,7 @@ class SessionManager {
                         session.model = data.model
                         session.lastActivity = data.lastActivity
                         session.sessionFile = candidateFiles.first(where: { $0.path.contains(data.id) })?.path // Best effort match or we store path in data
-                        
+
                         // We need the file path. Let's update SerializedSessionData to arguably include it or just rely on the fact we had it.
                         // Actually, parseSessionFileBackground doesn't return the full path in struct, but we need it.
                         // Let's rely on re-constructing it or better, updating the struct to include 'filePath'.
@@ -503,23 +562,23 @@ class SessionManager {
                     }
                 }
             }
-            
+
             // Re-implementation with tuple to keep track of file path
             await withTaskGroup(of: (URL, SerializedSessionData?).self) { group in
                 for file in candidateFiles {
                     let filePath = file.path
                     if liveSessions.contains(where: { $0.sessionFile == filePath }) { continue }
                     if sessionFileIndex[filePath] != nil { continue }
-                    
+
                     group.addTask {
                         return (file, parseSessionFileBackground(file))
                     }
                 }
-                
+
                 for await (url, sessionData) in group {
                     guard let data = sessionData else { continue }
                     let filePath = url.path
-                    
+
                     if sessions[data.id] == nil {
                         let session = ManagedSession(id: data.id, workingDirectory: data.workingDirectory, isLive: false)
                         session.messages = data.messages
@@ -527,7 +586,7 @@ class SessionManager {
                         session.lastActivity = data.lastActivity
                         session.sessionFile = filePath
                         session.fileModificationDate = data.fileModificationDate
-                        
+
                         sessions[session.id] = session
                         sessionFileIndex[filePath] = session.id
                         loadedCount += 1
@@ -576,7 +635,7 @@ class ManagedSession: Identifiable, Equatable {
     var isLikelyExternallyActive: Bool {
         guard !isLive else { return false }
         guard let modDate = fileModificationDate else { return false }
-        return Date().timeIntervalSince(modDate) < 30
+        return Date().timeIntervalSince(modDate) < 10  // Reduced from 30s to 10s
     }
 
     /// Whether this session appears to be waiting for a response (user message without reply)
@@ -585,9 +644,35 @@ class ManagedSession: Identifiable, Equatable {
         guard !isLive else { return false }
         // Check if the last message is from user (waiting for assistant)
         guard let lastMessage = messages.last, lastMessage.role == .user else { return false }
-        // And the file was recently modified (within 60 seconds)
+        // And the file was recently modified (within 10 seconds - reduced from 60)
         guard let modDate = fileModificationDate else { return false }
-        return Date().timeIntervalSince(modDate) < 60
+        return Date().timeIntervalSince(modDate) < 10
+    }
+
+    /// Track rapid file changes to detect "executing" state
+    private var recentModificationCount: Int = 0
+    private var recentModificationWindow: Date = Date.distantPast
+
+    /// Whether this session appears to be executing tools (rapid file changes)
+    var isLikelyExecuting: Bool {
+        guard !isLive else { return false }
+        // Reset window if expired (5 second window)
+        if Date().timeIntervalSince(recentModificationWindow) > 5 {
+            recentModificationCount = 0
+            return false
+        }
+        // 2+ modifications in 5 seconds suggests tool execution
+        return recentModificationCount >= 2
+    }
+
+    /// Call this when file is modified to track rapid changes
+    func recordFileModification() {
+        // Reset if outside window
+        if Date().timeIntervalSince(recentModificationWindow) > 5 {
+            recentModificationCount = 0
+        }
+        recentModificationCount += 1
+        recentModificationWindow = Date()
     }
 
     // RPC client (only for live sessions)
@@ -966,7 +1051,7 @@ class ManagedSession: Identifiable, Equatable {
                                let toolName = (block["name"] ?? block["toolName"]) as? String {
                                 let args = block["arguments"] as? [String: Any] ?? block["input"] as? [String: Any]
                                 let codableArgs = args?.mapValues { AnyCodable($0) }
-                                
+
                                 loadedMessages.append(RPCMessage(
                                     id: toolId,
                                     role: .tool,
@@ -1044,7 +1129,7 @@ private struct SerializedSessionData: Sendable {
     let model: RPCModel?
     let lastActivity: Date
     let fileModificationDate: Date
-    
+
     var projectName: String {
         URL(fileURLWithPath: workingDirectory).lastPathComponent
     }
@@ -1118,7 +1203,7 @@ private nonisolated func parseSessionFileBackground(_ url: URL) -> SerializedSes
         case "message":
             guard let messageObj = json["message"] as? [String: Any],
                   let role = messageObj["role"] as? String else { continue }
-            
+
             let messageId = json["id"] as? String ?? UUID().uuidString
 
             switch role {

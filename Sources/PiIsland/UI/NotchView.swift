@@ -19,16 +19,28 @@ struct NotchView: View {
     @ObservedObject var viewModel: NotchViewModel
     @State private var isVisible: Bool = false
     @State private var isHovering: Bool = false
-    @State private var activityCheckTrigger: Int = 0  // Triggers re-evaluation of hasActivity
 
     // MARK: - Sizing
+    
+    /// Extra width for expanding when there's activity (like Dynamic Island)
+    private var expansionWidth: CGFloat {
+        guard hasActivity else { return 0 }
+        // Expand to make room for logo and indicator outside physical notch
+        return 2 * sideWidth + 16
+    }
 
     private var notchSize: CGSize {
         switch viewModel.status {
         case .closed:
-            return viewModel.closedNotchSize
+            return CGSize(
+                width: viewModel.closedNotchSize.width + expansionWidth,
+                height: viewModel.closedNotchSize.height
+            )
         case .hint:
-            return viewModel.hintNotchSize
+            return CGSize(
+                width: viewModel.closedNotchSize.width + expansionWidth,
+                height: viewModel.closedNotchSize.height
+            )
         case .opened:
             return viewModel.openedSize
         }
@@ -108,6 +120,7 @@ struct NotchView: View {
                     )
                     .animation(animationForStatus, value: viewModel.status)
                     .animation(openAnimation, value: notchSize)
+                    .animation(.smooth, value: hasActivity)
                     .contentShape(Rectangle())
                     .onHover { hovering in
                         withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) {
@@ -136,10 +149,7 @@ struct NotchView: View {
         .onChange(of: viewModel.sessionManager.liveSessions) { _, sessions in
             handleSessionsChange(sessions)
         }
-        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
-            // Periodically re-evaluate activity state for external sessions
-            activityCheckTrigger += 1
-        }
+        // Reactive: No timer needed - @Observable drives updates automatically
     }
 
     // MARK: - Notch Layout
@@ -149,12 +159,11 @@ struct NotchView: View {
         VStack(alignment: .leading, spacing: 0) {
             // Header row - always present, matches physical notch height
             headerRow
-                .frame(height: viewModel.closedNotchSize.height)
+                .frame(height: max(24, viewModel.closedNotchSize.height))
 
             // Main content only when opened
             if viewModel.status == .opened {
                 contentView
-                    .frame(width: notchSize.width - 24, height: notchSize.height - viewModel.closedNotchSize.height - 24)
                     .transition(
                         .asymmetric(
                             insertion: .scale(scale: 0.8, anchor: .top)
@@ -169,19 +178,24 @@ struct NotchView: View {
 
     // MARK: - Header Row
 
+    /// Current activity state from SessionManager (reactive, no polling)
+    private var activityState: SessionManager.ActivityState {
+        viewModel.sessionManager.activityState
+    }
+    
     private var hasActivity: Bool {
-        // This depends on activityCheckTrigger to force re-evaluation
-        _ = activityCheckTrigger
-
-        // Check live sessions for thinking/executing
-        let liveActivity = viewModel.sessionManager.liveSessions.contains { session in
-            session.phase == .thinking || session.phase == .executing
+        activityState != .idle
+    }
+    
+    /// Color for activity state
+    private func activityColor(for state: SessionManager.ActivityState) -> Color {
+        switch state {
+        case .idle: return .gray
+        case .thinking: return .blue
+        case .executing: return .cyan
+        case .externallyActive: return .yellow
+        case .error: return .red
         }
-        // Check historical sessions for likely thinking (terminal pi)
-        let externalActivity = viewModel.sessionManager.historicalSessions.contains { session in
-            session.isLikelyThinking
-        }
-        return liveActivity || externalActivity
     }
 
     private var isHintState: Bool {
@@ -191,30 +205,37 @@ struct NotchView: View {
     @ViewBuilder
     private var headerRow: some View {
         HStack(spacing: 0) {
-            // Left side - Pi logo (pulses when there's an unread message)
+            // Left side - Pi logo (always visible, animates when activity)
             HStack(spacing: 4) {
-                PiLogo(size: 14, isAnimating: hasActivity, isPulsing: isHintState)
+                PiLogo(
+                    size: 14,
+                    isAnimating: activityState.shouldAnimate,
+                    isPulsing: isHintState,
+                    color: activityColor(for: activityState)
+                )
             }
-            .frame(width: viewModel.status == .opened ? sideWidth : sideWidth, alignment: .center)
+            .frame(width: viewModel.status == .opened ? nil : sideWidth)
             .padding(.leading, viewModel.status == .opened ? 8 : 0)
 
-            // Center
+            // Center content
             if viewModel.status == .opened {
                 openedHeaderContent
+            } else if !hasActivity {
+                // Closed without activity: empty space
+                Rectangle()
+                    .fill(.clear)
+                    .frame(width: viewModel.closedNotchSize.width - 20)
             } else {
-                // Closed/Hint: black spacer with constrained width
+                // Closed with activity: black spacer
                 Rectangle()
                     .fill(.black)
-                    .frame(width: max(0, viewModel.closedNotchSize.width - (sideWidth * 2)))
+                    .frame(width: viewModel.closedNotchSize.width - cornerRadiusInsets.closed.top)
             }
 
-            // Right side - spinner when processing, placeholder otherwise
+            // Right side - activity indicator (only when activity)
             if hasActivity {
-                ProcessingSpinner()
-                    .frame(width: sideWidth, alignment: .center)
-            } else {
-                Color.clear
-                    .frame(width: sideWidth)
+                ActivityIndicator(state: activityState)
+                    .frame(width: viewModel.status == .opened ? 20 : sideWidth)
             }
         }
         .frame(height: viewModel.closedNotchSize.height)
@@ -306,7 +327,7 @@ struct NotchView: View {
                 SettingsContentView(viewModel: viewModel)
             }
         }
-        .frame(width: notchSize.width - 24)
+        .frame(width: notchSize.width - 24) // Fixed width creates internal margins
     }
 
     // MARK: - Event Handlers
@@ -329,6 +350,62 @@ struct NotchView: View {
         if sessions.contains(where: { $0.phase == .thinking || $0.phase == .executing }) {
             isVisible = true
         }
+    }
+}
+
+// MARK: - Activity Indicator (phase-specific)
+
+struct ActivityIndicator: View {
+    let state: SessionManager.ActivityState
+    
+    private var stateColor: Color {
+        switch state {
+        case .idle: return .gray
+        case .thinking: return .blue
+        case .executing: return .cyan
+        case .externallyActive: return .yellow
+        case .error: return .red
+        }
+    }
+    
+    var body: some View {
+        switch state {
+        case .thinking:
+            // Brain/thinking icon
+            Image(systemName: "brain")
+                .font(.system(size: 12))
+                .foregroundColor(stateColor)
+        case .executing:
+            // Tool/wrench icon
+            Image(systemName: "wrench.fill")
+                .font(.system(size: 11))
+                .foregroundColor(stateColor)
+        case .externallyActive:
+            // Pulse dot
+            PulseDot(color: stateColor)
+        case .error:
+            // Error indicator
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 11))
+                .foregroundColor(stateColor)
+        case .idle:
+            EmptyView()
+        }
+    }
+}
+
+struct PulseDot: View {
+    let color: Color
+    @State private var isPulsing = false
+    
+    var body: some View {
+        Circle()
+            .fill(color)
+            .frame(width: 8, height: 8)
+            .scaleEffect(isPulsing ? 1.3 : 1.0)
+            .opacity(isPulsing ? 0.7 : 1.0)
+            .animation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true), value: isPulsing)
+            .onAppear { isPulsing = true }
     }
 }
 
@@ -502,11 +579,9 @@ struct SessionsListView: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.white.opacity(0.5))
             }
-            .padding(.horizontal, 16)
 
             Divider()
                 .background(Color.white.opacity(0.1))
-                .padding(.horizontal, 16)
 
             // Normal scroll - sessions at top
             ScrollView(.vertical, showsIndicators: false) {
@@ -514,7 +589,6 @@ struct SessionsListView: View {
                     // Live sessions first (at top)
                     ForEach(sessionManager.liveSessions) { session in
                         SessionRowView(session: session, isSelected: session.id == sessionManager.selectedSessionId)
-                            .padding(.horizontal, 16)
                             .onTapGesture {
                                 viewModel.showChat(for: session)
                             }
@@ -526,12 +600,10 @@ struct SessionsListView: View {
                             .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(.white.opacity(0.4))
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 16)
                             .padding(.top, 8)
 
                         ForEach(sessionManager.historicalSessions.prefix(5)) { session in
                             SessionRowView(session: session, isSelected: false)
-                                .padding(.horizontal, 16)
                                 .onTapGesture {
                                     resumeHistoricalSession(session)
                                 }

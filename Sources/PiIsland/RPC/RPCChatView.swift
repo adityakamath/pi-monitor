@@ -24,28 +24,24 @@ struct SessionChatView: View {
                         // Messages in reverse order (oldest first in array, appear at bottom)
                         ForEach(session.messages.reversed()) { message in
                             MessageRow(message: message)
-                                .padding(.horizontal, 16)
                                 .scaleEffect(x: 1, y: -1)
                         }
 
                         // Streaming thinking
                         if !session.streamingThinking.isEmpty {
                             ThinkingMessageView(text: session.streamingThinking)
-                                .padding(.horizontal, 16)
                                 .scaleEffect(x: 1, y: -1)
                         }
 
                         // Streaming text
                         if !session.streamingText.isEmpty {
                             StreamingMessageView(text: session.streamingText)
-                                .padding(.horizontal, 16)
                                 .scaleEffect(x: 1, y: -1)
                         }
 
                         // Current tool execution
                         if let tool = session.currentTool {
                             ToolExecutionView(tool: tool)
-                                .padding(.horizontal, 16)
                                 .scaleEffect(x: 1, y: -1)
                         }
                     }
@@ -75,8 +71,6 @@ struct SessionChatView: View {
             // Input bar (only for live sessions)
             if session.isLive {
                 inputBar
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 12)
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
@@ -96,7 +90,6 @@ struct SessionChatView: View {
             
             Spacer()
         }
-        .padding(.horizontal, 16)
         .padding(.vertical, 12)
     }
 
