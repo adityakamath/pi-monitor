@@ -661,6 +661,8 @@ class ManagedSession: Identifiable, Equatable {
     var lastActivity: Date = Date()
     var sessionFile: String?
     var fileModificationDate: Date?
+    var commandOutput: String?  // Output from extension commands (non-message output)
+    var sessionStats: SessionStats?  // Token/cost stats
 
     /// Whether this session appears to be active externally (file recently modified)
     /// This is a cached value updated by the file watcher - no disk I/O in getter
@@ -795,6 +797,9 @@ class ManagedSession: Identifiable, Equatable {
     func sendPrompt(_ text: String) async {
         guard isLive, let client = rpcClient else { return }
 
+        // Clear any previous command output
+        commandOutput = nil
+
         let userMessage = RPCMessage(
             id: UUID().uuidString,
             role: .user,
@@ -822,6 +827,15 @@ class ManagedSession: Identifiable, Equatable {
 
     func abort() async {
         try? await rpcClient?.abort()
+    }
+
+    func refreshStats() async {
+        guard isLive, let client = rpcClient else { return }
+        do {
+            try await client.getSessionStats()
+        } catch {
+            logger.error("Failed to fetch session stats: \(error.localizedDescription)")
+        }
     }
 
     func cycleModel() async {
@@ -914,6 +928,8 @@ class ManagedSession: Identifiable, Equatable {
                 self?.finalizeStreamingMessage()
                 // Notify for visual hint
                 self?.onAgentCompleted?()
+                // Refresh stats after completion
+                Task { await self?.refreshStats() }
             },
             onMessageUpdate: { [weak self] message, delta in
                 self?.handleMessageUpdate(delta)
@@ -944,6 +960,12 @@ class ManagedSession: Identifiable, Equatable {
                 if let sessionFile {
                     self?.sessionFile = sessionFile
                 }
+            },
+            onCommandOutput: { [weak self] output in
+                self?.handleCommandOutput(output)
+            },
+            onSessionStats: { [weak self] stats in
+                self?.sessionStats = stats
             }
         )
     }
@@ -1069,6 +1091,22 @@ class ManagedSession: Identifiable, Equatable {
         if let file = state.sessionFile {
             sessionFile = file
         }
+    }
+
+    @MainActor
+    private func handleCommandOutput(_ output: String) {
+        // Accumulate command output (multiple lines may come separately)
+        if let existing = commandOutput {
+            commandOutput = existing + "\n" + output
+        } else {
+            commandOutput = output
+        }
+        lastActivity = Date()
+    }
+
+    /// Clear command output (call after displaying it)
+    func clearCommandOutput() {
+        commandOutput = nil
     }
 
     private func handleMessagesLoaded(_ rawMessages: [AnyCodable]) {

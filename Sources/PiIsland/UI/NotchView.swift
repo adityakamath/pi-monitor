@@ -563,6 +563,31 @@ private struct SettingsToggleRow: View {
 struct SessionsListView: View {
     @ObservedObject var viewModel: NotchViewModel
     @Bindable var sessionManager: SessionManager
+    @State private var searchText = ""
+
+    /// Filtered live sessions based on search
+    private var filteredLiveSessions: [ManagedSession] {
+        if searchText.isEmpty {
+            return sessionManager.liveSessions
+        }
+        let query = searchText.lowercased()
+        return sessionManager.liveSessions.filter {
+            $0.projectName.lowercased().contains(query) ||
+            $0.workingDirectory.lowercased().contains(query)
+        }
+    }
+
+    /// Filtered historical sessions based on search
+    private var filteredHistoricalSessions: [ManagedSession] {
+        if searchText.isEmpty {
+            return Array(sessionManager.historicalSessions.prefix(10))
+        }
+        let query = searchText.lowercased()
+        return sessionManager.historicalSessions.filter {
+            $0.projectName.lowercased().contains(query) ||
+            $0.workingDirectory.lowercased().contains(query)
+        }.prefix(20).map { $0 }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -574,10 +599,44 @@ struct SessionsListView: View {
 
                 Spacer()
 
+                // New session button
+                Button(action: { showDirectoryPicker() }) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(.blue)
+                }
+                .buttonStyle(.plain)
+                .help("New session")
+
                 Text("\(sessionManager.liveSessions.count) active")
                     .font(.system(size: 11))
                     .foregroundStyle(.white.opacity(0.5))
             }
+
+            // Search bar
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white.opacity(0.4))
+
+                TextField("Search sessions...", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white)
+
+                if !searchText.isEmpty {
+                    Button(action: { searchText = "" }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.white.opacity(0.4))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(Color.white.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
 
             Divider()
                 .background(Color.white.opacity(0.1))
@@ -586,22 +645,28 @@ struct SessionsListView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: 6) {
                     // Live sessions first (at top)
-                    ForEach(sessionManager.liveSessions) { session in
-                        SessionRowView(session: session, isSelected: session.id == sessionManager.selectedSessionId)
-                            .onTapGesture {
-                                viewModel.showChat(for: session)
+                    ForEach(filteredLiveSessions) { session in
+                        SessionRowView(
+                            session: session,
+                            isSelected: session.id == sessionManager.selectedSessionId,
+                            onStop: {
+                                stopSession(session)
                             }
+                        )
+                        .onTapGesture {
+                            viewModel.showChat(for: session)
+                        }
                     }
 
                     // Historical sessions
-                    if !sessionManager.historicalSessions.isEmpty {
-                        Text("Recent")
+                    if !filteredHistoricalSessions.isEmpty {
+                        Text(searchText.isEmpty ? "Recent" : "Results")
                             .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(.white.opacity(0.4))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.top, 8)
 
-                        ForEach(sessionManager.historicalSessions.prefix(5)) { session in
+                        ForEach(filteredHistoricalSessions) { session in
                             SessionRowView(
                                 session: session,
                                 isSelected: false,
@@ -627,6 +692,44 @@ struct SessionsListView: View {
         }
     }
 
+    private func showDirectoryPicker() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose a directory for the new Pi session"
+        panel.prompt = "Select"
+        
+        // Run as a standalone window (not as sheet)
+        panel.begin { response in
+            if response == .OK, let url = panel.url {
+                createNewSession(at: url)
+            }
+        }
+    }
+
+    private func createNewSession(at url: URL) {
+        // Get security-scoped access
+        guard url.startAccessingSecurityScopedResource() else {
+            print("Failed to access directory: \(url.path)")
+            return
+        }
+
+        // Capture the path before releasing security scope
+        let path = url.path
+        
+        // Release security scope - we only needed it to verify access
+        // Pi will access the directory directly via its own process
+        url.stopAccessingSecurityScopedResource()
+
+        Task {
+            let session = await sessionManager.createSession(workingDirectory: path)
+            await MainActor.run {
+                viewModel.showChat(for: session)
+            }
+        }
+    }
+
     private func resumeHistoricalSession(_ session: ManagedSession) {
         // print("[DEBUG] resumeHistoricalSession: \(session.projectName), messages: \(session.messages.count)")
 
@@ -640,6 +743,12 @@ struct SessionsListView: View {
             // print("[DEBUG] Starting resume task...")
             _ = await sessionManager.resumeSession(session)
             // print("[DEBUG] Resume complete: \(resumed?.projectName ?? "nil"), messages: \(resumed?.messages.count ?? 0)")
+        }
+    }
+
+    private func stopSession(_ session: ManagedSession) {
+        Task {
+            await sessionManager.removeSession(session.id)
         }
     }
 
@@ -659,6 +768,7 @@ struct SessionsListView: View {
 struct SessionRowView: View {
     @Bindable var session: ManagedSession
     let isSelected: Bool
+    var onStop: (() -> Void)? = nil
     var onDelete: (() -> Void)? = nil
 
     var body: some View {
@@ -686,6 +796,17 @@ struct SessionRowView: View {
             }
 
             Spacer()
+
+            // Stop button for live sessions
+            if session.isLive, let onStop {
+                Button(action: onStop) {
+                    Image(systemName: "stop.circle")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.orange.opacity(0.7))
+                }
+                .buttonStyle(.plain)
+                .help("Stop session")
+            }
 
             // Delete button for historical sessions
             if !session.isLive, let onDelete {

@@ -161,6 +161,11 @@ struct RPCEvent: Decodable, Sendable {
     let willRetry: Bool?
     let extensionPath: String?
     let event: String?
+
+    // Extension UI request fields
+    let method: String?           // "notify", "select", "confirm", "input", etc.
+    let notifyType: String?       // "info", "warning", "error"
+    // Note: "message" field is reused for notify message content
 }
 
 struct AssistantMessageEvent: Decodable, Sendable {
@@ -238,6 +243,40 @@ struct RPCTokens: Decodable, Sendable {
     let cacheRead: Int?
     let cacheWrite: Int?
     let total: Int?
+}
+
+// MARK: - Session Stats
+
+struct SessionStats: Decodable, Sendable {
+    let sessionFile: String?
+    let sessionId: String?
+    let userMessages: Int?
+    let assistantMessages: Int?
+    let toolCalls: Int?
+    let toolResults: Int?
+    let totalMessages: Int?
+    let tokens: RPCTokens?
+    let cost: Double?
+
+    /// Format cost as currency string
+    var formattedCost: String {
+        guard let cost = cost, cost > 0 else { return "$0.00" }
+        if cost < 0.01 {
+            return String(format: "$%.4f", cost)
+        }
+        return String(format: "$%.2f", cost)
+    }
+
+    /// Format total tokens as abbreviated string (e.g., "12.3K")
+    var formattedTokens: String {
+        guard let total = tokens?.total, total > 0 else { return "0" }
+        if total >= 1_000_000 {
+            return String(format: "%.1fM", Double(total) / 1_000_000)
+        } else if total >= 1_000 {
+            return String(format: "%.1fK", Double(total) / 1_000)
+        }
+        return "\(total)"
+    }
 }
 
 // MARK: - AnyCodable (for dynamic JSON)
@@ -338,6 +377,28 @@ struct RPCMessage: Identifiable, Equatable, Sendable {
 
     static func == (lhs: RPCMessage, rhs: RPCMessage) -> Bool {
         lhs.id == rhs.id
+    }
+
+    /// Whether this message should be displayed in the UI
+    /// Filters out system initialization messages (e.g., model list JSON)
+    var isDisplayable: Bool {
+        // Tool messages are always displayable
+        if toolName != nil { return true }
+        
+        // User messages are always displayable
+        if role == .user { return true }
+        
+        // Empty messages are not displayable
+        guard let content = content, !content.isEmpty else { return false }
+        
+        // Filter out messages that look like raw JSON system data
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("{") || trimmed.hasPrefix("[") {
+            // Likely JSON initialization data
+            return false
+        }
+        
+        return true
     }
 
     var displayText: String {

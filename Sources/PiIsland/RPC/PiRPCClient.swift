@@ -31,6 +31,8 @@ actor PiRPCClient {
     var onProcessTerminated: (@MainActor () -> Void)?
     var onMessagesLoaded: (@MainActor ([AnyCodable]) -> Void)?
     var onSessionSwitched: (@MainActor (String?) -> Void)?
+    var onCommandOutput: (@MainActor (String) -> Void)?  // For non-JSON stdout (extension command output)
+    var onSessionStats: (@MainActor (SessionStats) -> Void)?  // For token/cost display
 
     // State
     private(set) var isRunning = false
@@ -345,13 +347,24 @@ actor PiRPCClient {
 
             guard !lineData.isEmpty else { continue }
 
+            // Try to parse as JSON event
             do {
                 let event = try decoder.decode(RPCEvent.self, from: lineData)
                 await processEvent(event)
             } catch {
-                if let text = String(data: lineData, encoding: .utf8) {
-                    logger.warning("Failed to parse event: \(error.localizedDescription)")
-                    logger.warning("Raw JSON: \(text.prefix(200))")
+                // Not JSON - this is likely command output (e.g., from extension commands)
+                if let text = String(data: lineData, encoding: .utf8), !text.isEmpty {
+                    // Check if it looks like JSON that failed to parse (starts with {)
+                    if text.hasPrefix("{") {
+                        logger.warning("Failed to parse JSON event: \(error.localizedDescription)")
+                        logger.warning("Raw JSON: \(text.prefix(200))")
+                    } else {
+                        // Plain text output from commands
+                        logger.info("Command output: \(text.prefix(100))")
+                        if let callback = onCommandOutput {
+                            await MainActor.run { callback(text) }
+                        }
+                    }
                 }
             }
         }
@@ -438,6 +451,25 @@ actor PiRPCClient {
                 await MainActor.run { callback(error) }
             }
 
+        case "extension_ui_request":
+            // Handle extension UI requests - particularly "notify" for command output
+            if event.method == "notify" {
+                // The message field contains the notification text (as a string)
+                if let callback = onCommandOutput,
+                   let messageValue = event.message {
+                    let text: String
+                    if let str = messageValue.stringValue {
+                        text = str
+                    } else {
+                        // Fallback - convert to string representation
+                        text = String(describing: messageValue.value)
+                    }
+                    logger.info("Extension notify: \(text.prefix(100))")
+                    await MainActor.run { callback(text) }
+                }
+            }
+            // Other methods (select, confirm, input) would need UI dialogs - not implemented yet
+
         default:
             break
         }
@@ -503,6 +535,16 @@ actor PiRPCClient {
             // After new session, fetch state to get the session file path
             try? await send(.getState)
 
+        case "get_session_stats":
+            if let data = event.data?.dictValue {
+                if let statsData = try? JSONSerialization.data(withJSONObject: data),
+                   let stats = try? decoder.decode(SessionStats.self, from: statsData) {
+                    if let callback = onSessionStats {
+                        await MainActor.run { callback(stats) }
+                    }
+                }
+            }
+
         default:
             break
         }
@@ -540,7 +582,9 @@ extension PiRPCClient {
         onError: @escaping @MainActor (String) -> Void,
         onProcessTerminated: @escaping @MainActor () -> Void,
         onMessagesLoaded: (@MainActor ([AnyCodable]) -> Void)? = nil,
-        onSessionSwitched: (@MainActor (String?) -> Void)? = nil
+        onSessionSwitched: (@MainActor (String?) -> Void)? = nil,
+        onCommandOutput: (@MainActor (String) -> Void)? = nil,
+        onSessionStats: (@MainActor (SessionStats) -> Void)? = nil
     ) async {
         self.onAgentStart = onAgentStart
         self.onAgentEnd = onAgentEnd
@@ -553,5 +597,7 @@ extension PiRPCClient {
         self.onProcessTerminated = onProcessTerminated
         self.onMessagesLoaded = onMessagesLoaded
         self.onSessionSwitched = onSessionSwitched
+        self.onCommandOutput = onCommandOutput
+        self.onSessionStats = onSessionStats
     }
 }

@@ -1,6 +1,7 @@
 import MarkdownUI
 import OSLog
 import SwiftUI
+import UniformTypeIdentifiers
 
 private let logger = Logger(subsystem: "com.pi-island", category: "ChatView")
 
@@ -11,7 +12,11 @@ struct SessionChatView: View {
     @Bindable var session: ManagedSession
     @State private var inputText = ""
     @State private var showCommandCompletion = false
+    @State private var showFileCompletion = false
     @State private var selectedCommandIndex = 0
+    @State private var selectedFileIndex = 0
+    @State private var fileCompletions: [FileCompletionInfo] = []
+    @State private var fileCompletionQuery = ""
     @FocusState private var isInputFocused: Bool
 
     /// Filtered commands based on input
@@ -38,15 +43,15 @@ struct SessionChatView: View {
                         // Anchor at top (visual bottom due to inversion)
                         Color.clear.frame(height: 1).id("bottom")
 
-                        // Messages in reverse order (oldest first in array, appear at bottom)
-                        ForEach(session.messages.reversed()) { message in
-                            MessageRow(message: message)
+                        // Command output (from extension commands) - show at visual bottom
+                        if let output = session.commandOutput {
+                            CommandOutputView(text: output)
                                 .scaleEffect(x: 1, y: -1)
                         }
 
-                        // Streaming thinking
-                        if !session.streamingThinking.isEmpty {
-                            ThinkingMessageView(text: session.streamingThinking)
+                        // Current tool execution
+                        if let tool = session.currentTool {
+                            ToolExecutionView(tool: tool)
                                 .scaleEffect(x: 1, y: -1)
                         }
 
@@ -56,9 +61,15 @@ struct SessionChatView: View {
                                 .scaleEffect(x: 1, y: -1)
                         }
 
-                        // Current tool execution
-                        if let tool = session.currentTool {
-                            ToolExecutionView(tool: tool)
+                        // Streaming thinking
+                        if !session.streamingThinking.isEmpty {
+                            ThinkingMessageView(text: session.streamingThinking)
+                                .scaleEffect(x: 1, y: -1)
+                        }
+
+                        // Messages in reverse order (oldest first in array, appear at bottom)
+                        ForEach(session.messages.filter(\.isDisplayable).reversed()) { message in
+                            MessageRow(message: message)
                                 .scaleEffect(x: 1, y: -1)
                         }
                     }
@@ -82,6 +93,9 @@ struct SessionChatView: View {
                 .onChange(of: session.streamingThinking) {
                     proxy.scrollTo("bottom", anchor: .bottom)
                 }
+                .onChange(of: session.commandOutput) {
+                    proxy.scrollTo("bottom", anchor: .bottom)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -92,20 +106,28 @@ struct SessionChatView: View {
                     if showCommandCompletion && !filteredCommands.isEmpty {
                         commandCompletionView
                     }
+                    // File completion popover
+                    if showFileCompletion && !fileCompletions.isEmpty {
+                        fileCompletionView
+                    }
                     inputBar
                 }
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .onChange(of: inputText) { _, newValue in
-            // Show completion when typing /
-            let shouldShow = newValue.hasPrefix("/") && !filteredCommands.isEmpty
-            logger.info("Input changed: '\(newValue)', hasPrefix: \(newValue.hasPrefix("/")), availableCommands: \(self.session.availableCommands.count), filtered: \(self.filteredCommands.count), shouldShow: \(shouldShow)")
-            showCommandCompletion = shouldShow
+            // Show command completion when typing /
+            let shouldShowCommand = newValue.hasPrefix("/") && !filteredCommands.isEmpty
+            showCommandCompletion = shouldShowCommand
             selectedCommandIndex = 0
+
+            // Check for @ file reference trigger
+            updateFileCompletion(for: newValue)
         }
         .onAppear {
             logger.info("ChatView appeared, availableCommands: \(self.session.availableCommands.count)")
+            // Fetch stats when chat view appears
+            Task { await session.refreshStats() }
         }
     }
 
@@ -122,6 +144,25 @@ struct SessionChatView: View {
                 .lineLimit(1)
 
             Spacer()
+
+            // Token/cost display
+            if let stats = session.sessionStats {
+                HStack(spacing: 8) {
+                    // Tokens
+                    HStack(spacing: 3) {
+                        Image(systemName: "text.word.spacing")
+                            .font(.system(size: 9))
+                        Text(stats.formattedTokens)
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    }
+                    .foregroundStyle(.white.opacity(0.5))
+
+                    // Cost
+                    Text(stats.formattedCost)
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.green.opacity(0.7))
+                }
+            }
         }
         .padding(.vertical, 12)
     }
@@ -148,6 +189,28 @@ struct SessionChatView: View {
         .padding(.bottom, 4)
     }
 
+    private var fileCompletionView: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(fileCompletions.prefix(10).enumerated()), id: \.element.id) { index, file in
+                    FileCompletionRow(
+                        file: file,
+                        isSelected: index == selectedFileIndex
+                    )
+                    .onTapGesture {
+                        selectFile(file)
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        }
+        .frame(maxHeight: 250)
+        .background(Color.black.opacity(0.9))
+        .clipShape(.rect(cornerRadius: 8))
+        .padding(.horizontal, 12)
+        .padding(.bottom, 4)
+    }
+
     private var inputBar: some View {
         HStack(spacing: 8) {
             TextField("Message...", text: $inputText)
@@ -161,6 +224,8 @@ struct SessionChatView: View {
                 .onSubmit {
                     if showCommandCompletion && !filteredCommands.isEmpty {
                         selectCommand(filteredCommands[selectedCommandIndex])
+                    } else if showFileCompletion && !fileCompletions.isEmpty {
+                        selectFile(fileCompletions[selectedFileIndex])
                     } else {
                         sendMessage()
                     }
@@ -170,11 +235,19 @@ struct SessionChatView: View {
                         selectedCommandIndex = max(0, selectedCommandIndex - 1)
                         return .handled
                     }
+                    if showFileCompletion {
+                        selectedFileIndex = max(0, selectedFileIndex - 1)
+                        return .handled
+                    }
                     return .ignored
                 }
                 .onKeyPress(.downArrow) {
                     if showCommandCompletion {
                         selectedCommandIndex = min(filteredCommands.count - 1, selectedCommandIndex + 1)
+                        return .handled
+                    }
+                    if showFileCompletion {
+                        selectedFileIndex = min(fileCompletions.count - 1, selectedFileIndex + 1)
                         return .handled
                     }
                     return .ignored
@@ -184,11 +257,19 @@ struct SessionChatView: View {
                         selectCommand(filteredCommands[selectedCommandIndex])
                         return .handled
                     }
+                    if showFileCompletion && !fileCompletions.isEmpty {
+                        selectFile(fileCompletions[selectedFileIndex])
+                        return .handled
+                    }
                     return .ignored
                 }
                 .onKeyPress(.escape) {
                     if showCommandCompletion {
                         showCommandCompletion = false
+                        return .handled
+                    }
+                    if showFileCompletion {
+                        showFileCompletion = false
                         return .handled
                     }
                     return .ignored
@@ -252,12 +333,138 @@ struct SessionChatView: View {
         showCommandCompletion = false
     }
 
+    private func selectFile(_ file: FileCompletionInfo) {
+        // Find the @ position and replace the partial path
+        if let atRange = findCurrentAtReference() {
+            let before = String(inputText[inputText.startIndex..<atRange.lowerBound])
+            let after = String(inputText[atRange.upperBound...])
+
+            // If it's a directory, append / to allow further navigation
+            if file.isDirectory {
+                inputText = before + "@" + file.path + "/" + after
+                // Refresh completions for the directory
+                updateFileCompletion(for: inputText)
+            } else {
+                inputText = before + "@" + file.path + " " + after
+                showFileCompletion = false
+            }
+        }
+    }
+
+    private func findCurrentAtReference() -> Range<String.Index>? {
+        // Find the @ that starts the current file reference
+        // Look backwards from cursor (end of string for now) to find @
+        guard let atIndex = inputText.lastIndex(of: "@") else { return nil }
+        return atIndex..<inputText.endIndex
+    }
+
+    private func updateFileCompletion(for text: String) {
+        // Find @ followed by partial path
+        guard let atIndex = text.lastIndex(of: "@") else {
+            showFileCompletion = false
+            return
+        }
+
+        let afterAt = String(text[text.index(after: atIndex)...])
+
+        // Don't show completion if there's a space after the path (reference is complete)
+        if afterAt.contains(" ") && !afterAt.hasSuffix("/") {
+            showFileCompletion = false
+            return
+        }
+
+        fileCompletionQuery = afterAt.trimmingCharacters(in: .whitespaces)
+        selectedFileIndex = 0
+
+        // Get the working directory from session
+        let cwd = session.workingDirectory
+
+        Task {
+            let completions = await getFileCompletions(query: fileCompletionQuery, cwd: cwd)
+            await MainActor.run {
+                fileCompletions = completions
+                showFileCompletion = !completions.isEmpty
+            }
+        }
+    }
+
+    private func getFileCompletions(query: String, cwd: String) async -> [FileCompletionInfo] {
+        // Parse the query to get directory and file prefix
+        let queryPath = query.isEmpty ? "." : query
+
+        // Determine base directory and filter prefix
+        var searchDir: String
+        var filterPrefix: String
+
+        if queryPath.hasSuffix("/") {
+            // User typed a complete directory path, list its contents
+            searchDir = (cwd as NSString).appendingPathComponent(queryPath)
+            filterPrefix = ""
+        } else if queryPath.contains("/") {
+            // User is typing in a subdirectory
+            let dirPart = (queryPath as NSString).deletingLastPathComponent
+            searchDir = (cwd as NSString).appendingPathComponent(dirPart)
+            filterPrefix = (queryPath as NSString).lastPathComponent.lowercased()
+        } else {
+            // User is typing at the root level
+            searchDir = cwd
+            filterPrefix = queryPath.lowercased()
+        }
+
+        // List directory contents
+        let fm = FileManager.default
+        guard let contents = try? fm.contentsOfDirectory(atPath: searchDir) else {
+            return []
+        }
+
+        // Filter and sort
+        var results: [FileCompletionInfo] = []
+        let basePath = queryPath.contains("/")
+            ? (queryPath as NSString).deletingLastPathComponent
+            : ""
+
+        for item in contents {
+            // Skip hidden files unless user typed a dot
+            if item.hasPrefix(".") && !filterPrefix.hasPrefix(".") {
+                continue
+            }
+
+            // Filter by prefix
+            if !filterPrefix.isEmpty && !item.lowercased().hasPrefix(filterPrefix) {
+                continue
+            }
+
+            let fullPath = (searchDir as NSString).appendingPathComponent(item)
+            var isDir: ObjCBool = false
+            fm.fileExists(atPath: fullPath, isDirectory: &isDir)
+
+            let relativePath = basePath.isEmpty ? item : (basePath as NSString).appendingPathComponent(item)
+
+            results.append(FileCompletionInfo(
+                path: relativePath,
+                fullPath: fullPath,
+                isDirectory: isDir.boolValue
+            ))
+        }
+
+        // Sort: directories first, then alphabetically
+        results.sort { a, b in
+            if a.isDirectory != b.isDirectory {
+                return a.isDirectory
+            }
+            return a.path.localizedCaseInsensitiveCompare(b.path) == .orderedAscending
+        }
+
+        return Array(results.prefix(50))
+    }
+
     private func sendMessage() {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
 
         inputText = ""
         showCommandCompletion = false
+        showFileCompletion = false
 
         Task {
             // All messages go through sendPrompt (Pi handles slash commands internally)
@@ -284,6 +491,66 @@ private struct CommandCompletionRow: View {
                     .foregroundStyle(.white.opacity(0.5))
                     .lineLimit(1)
             }
+
+            Spacer()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(isSelected ? Color.blue.opacity(0.3) : Color.clear)
+        .clipShape(.rect(cornerRadius: 4))
+    }
+}
+
+// MARK: - File Completion Info
+
+struct FileCompletionInfo: Identifiable, Equatable {
+    let id = UUID()
+    let path: String      // Relative path from cwd
+    let fullPath: String  // Absolute path
+    let isDirectory: Bool
+
+    var displayName: String {
+        if isDirectory {
+            return path + "/"
+        }
+        return path
+    }
+
+    var iconName: String {
+        if isDirectory {
+            return "folder.fill"
+        }
+        // File type detection by extension
+        let ext = (path as NSString).pathExtension.lowercased()
+        switch ext {
+        case "swift": return "swift"
+        case "ts", "tsx", "js", "jsx": return "doc.text"
+        case "json": return "curlybraces"
+        case "md", "markdown": return "doc.richtext"
+        case "png", "jpg", "jpeg", "gif", "webp": return "photo"
+        case "yml", "yaml": return "list.bullet"
+        default: return "doc"
+        }
+    }
+}
+
+// MARK: - File Completion Row
+
+private struct FileCompletionRow: View {
+    let file: FileCompletionInfo
+    let isSelected: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: file.iconName)
+                .font(.system(size: 10))
+                .foregroundStyle(file.isDirectory ? .yellow : .white.opacity(0.7))
+                .frame(width: 14)
+
+            Text(file.displayName)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundStyle(.white)
+                .lineLimit(1)
 
             Spacer()
         }
@@ -790,6 +1057,38 @@ private struct StreamingMessageView: View {
 
             Spacer(minLength: 40)
         }
+    }
+}
+
+// MARK: - Command Output View
+
+private struct CommandOutputView: View {
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            // System indicator
+            Image(systemName: "terminal")
+                .font(.system(size: 12))
+                .foregroundStyle(.green)
+                .padding(.top, 3)
+
+            Text(text)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(.green)
+                .textSelection(.enabled)
+
+            Spacer(minLength: 20)
+        }
+        .padding(.vertical, 12)
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.black.opacity(0.4))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.green.opacity(0.3), lineWidth: 1)
+        )
     }
 }
 
