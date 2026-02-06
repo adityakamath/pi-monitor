@@ -23,23 +23,11 @@ links:
 ---
 ::
 
-::u-page-grid{class="lg:grid-cols-3 max-w-(--ui-container) mx-auto px-4"}
+::div{class="max-w-(--ui-container) mx-auto px-4 pb-16"}
+![Pi Island dynamic island interface](/_raw/Assets/Landing-2.png){.w-full .rounded-xl .shadow-2xl .ring-1 .ring-gray-200 .dark:ring-white/10}
+::
 
-:::u-page-card
----
-spotlight: true
-class: col-span-3
-to: /guide/usage
----
-
-![Pi Island dynamic island interface](/_raw/Assets/Landing-2.png){.w-full .rounded-lg}
-
-#title
-Dynamic Island for Pi
-
-#description
-A native macOS interface that lives in your **notch**. Monitor sessions, receive responses, and interact with Pi - all without leaving your current workflow.
-:::
+::u-page-grid{class="lg:grid-cols-3 max-w-(--ui-container) mx-auto px-4 pb-24"}
 
 :::u-page-card
 ---
@@ -125,7 +113,4 @@ Native SwiftUI
 Lightweight, fast, and perfectly integrated with **macOS**. Respects system appearance and uses minimal resources.
 :::
 
-::
-
-::div{class="h-24"}
 ::
