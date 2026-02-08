@@ -238,9 +238,9 @@ struct NotchView: View {
                     .frame(width: viewModel.closedNotchSize.width - cornerRadiusInsets.closed.top)
             }
 
-            // Right side - activity indicator (only when activity)
+            // Right side - empty for symmetry (indicator removed)
             if hasActivity {
-                ActivityIndicator(state: activityState)
+                Color.clear
                     .frame(width: viewModel.status == .opened ? 20 : sideWidth)
             }
         }
