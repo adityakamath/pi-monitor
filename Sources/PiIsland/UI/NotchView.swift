@@ -238,10 +238,10 @@ struct NotchView: View {
                     .frame(width: viewModel.closedNotchSize.width - cornerRadiusInsets.closed.top)
             }
 
-            // Right side - empty for symmetry (indicator removed)
-            if hasActivity {
+            // Right side - empty for symmetry when closed with activity
+            if hasActivity && viewModel.status != .opened {
                 Color.clear
-                    .frame(width: viewModel.status == .opened ? 20 : sideWidth)
+                    .frame(width: sideWidth)
             }
         }
         .frame(height: viewModel.closedNotchSize.height)
@@ -268,6 +268,26 @@ struct NotchView: View {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 9, weight: .semibold))
                         Text("Sessions")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundStyle(.white.opacity(0.5))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .background(Color.white.opacity(0.08))
+                    .clipShape(.rect(cornerRadius: 6))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            } else if case .settings = viewModel.contentType {
+                Button {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        viewModel.exitSettings()
+                    }
+                } label: {
+                    HStack(spacing: 2) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 9, weight: .semibold))
+                        Text("Back")
                             .font(.system(size: 11, weight: .medium))
                     }
                     .foregroundStyle(.white.opacity(0.5))
@@ -470,35 +490,24 @@ struct SettingsContentView: View {
     @AppStorage("showInDock") private var showInDock = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Header with back button
+        VStack(alignment: .leading, spacing: 8) {
+            // Header
             HStack {
-                Button(action: { viewModel.exitSettings() }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 10, weight: .semibold))
-                        Text("Back")
-                            .font(.system(size: 12, weight: .medium)) // Increased from 11
-                    }
-                    .foregroundStyle(.white.opacity(0.7))
-                }
-                .buttonStyle(.plain)
-
-                Spacer()
-
                 Text("Settings")
-                    .font(.system(size: 13, weight: .semibold)) // Increased from 12
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.white)
 
                 Spacer()
-
-                // Spacer for symmetry
-                Color.clear.frame(width: 44)
             }
 
             Divider()
                 .background(Color.white.opacity(0.1))
-                .padding(.top, 8)
+
+            // Status Legend
+            StatusColorsLegend()
+
+            Divider()
+                .background(Color.white.opacity(0.1))
 
             // Settings options
             VStack(spacing: 2) {
@@ -522,7 +531,6 @@ struct SettingsContentView: View {
                     setShowInDock(enabled: newValue)
                 }
             }
-            .padding(.vertical, 8)
 
             Spacer()
 
@@ -533,7 +541,7 @@ struct SettingsContentView: View {
                         Image(systemName: "arrow.down.circle.fill")
                             .font(.system(size: 14))
                             .foregroundStyle(.green)
-                        
+
                         VStack(alignment: .leading, spacing: 1) {
                             Text("Update Available")
                                 .font(.system(size: 11, weight: .medium))
@@ -542,9 +550,9 @@ struct SettingsContentView: View {
                                 .font(.system(size: 9))
                                 .foregroundStyle(.white.opacity(0.6))
                         }
-                        
+
                         Spacer()
-                        
+
                         Image(systemName: "chevron.right")
                             .font(.system(size: 10))
                             .foregroundStyle(.white.opacity(0.4))
@@ -555,15 +563,13 @@ struct SettingsContentView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.plain)
-                .padding(.horizontal, 8)
-                .padding(.bottom, 8)
             }
 
             // Version info
             Text(AppVersion.display)
                 .font(.system(size: 10))
                 .foregroundStyle(.white.opacity(0.4))
-                .padding(.bottom, 8)
+                .frame(maxWidth: .infinity)
         }
         .padding(.top, 8)
     }
@@ -922,5 +928,35 @@ struct SessionRowView: View {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         return formatter.localizedString(for: date, relativeTo: Date())
+    }
+}
+// MARK: - Status Legend
+private struct StatusColorsLegend: View {
+    private static let items: [(Color, String)] = [
+        (.green, "Idle"),
+        (.blue, "Thinking"),
+        (.cyan, "Running"),
+        (.yellow, "Active"),
+        (.orange, "Starting"),
+        (.red, "Error"),
+    ]
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(Self.items.enumerated()), id: \.offset) { index, item in
+                if index > 0 {
+                    Spacer(minLength: 0)
+                }
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(item.0)
+                        .frame(width: 5, height: 5)
+                    Text(item.1)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.white.opacity(0.5))
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
     }
 }

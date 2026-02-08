@@ -33,6 +33,14 @@ struct SettingsView: View {
             Divider()
                 .background(Color.white.opacity(0.1))
 
+            // Status Legend
+            StatusColorsLegend()
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+
+            Divider()
+                .background(Color.white.opacity(0.1))
+
             // Settings options
             VStack(spacing: 2) {
                 SettingsToggleRow(
@@ -96,7 +104,7 @@ struct SettingsView: View {
             }
             .padding(.bottom, 12)
         }
-        .frame(width: 280, height: 280)
+        .frame(width: 280, height: 320)
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
@@ -148,6 +156,44 @@ struct SettingsView: View {
             NSApp.setActivationPolicy(.regular)
         } else {
             NSApp.setActivationPolicy(.accessory)
+        }
+    }
+}
+
+// MARK: - Status Legend
+private struct StatusColorsLegend: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("STATUS INDICATORS")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.white.opacity(0.6))
+            
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    StatusItem(color: .blue, label: "Thinking")
+                    StatusItem(color: .cyan, label: "Running")
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    StatusItem(color: .yellow, label: "Active")
+                    StatusItem(color: .red, label: "Error")
+                }
+            }
+        }
+    }
+    
+    struct StatusItem: View {
+        let color: Color
+        let label: String
+        
+        var body: some View {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(color)
+                    .frame(width: 6, height: 6)
+                Text(label)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white.opacity(0.7))
+            }
         }
     }
 }

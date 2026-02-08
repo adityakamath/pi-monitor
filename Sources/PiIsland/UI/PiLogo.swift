@@ -59,44 +59,65 @@ struct PiLogo: View {
     var color: Color = .white
 
     @State private var bounceScale: CGFloat = 1.0
-
+    @State private var shimmerPhase: CGFloat = 0.0
+    
     var body: some View {
         PiLogoShape()
-            .fill(color.opacity(effectiveOpacity), style: FillStyle(eoFill: true))
+            .fill(
+                // Liquid Shimmer Gradient
+                LinearGradient(
+                    stops: [
+                        .init(color: color.opacity(isAnimating ? 0.9 : 0.6), location: 0),
+                        .init(color: color.opacity(isAnimating ? 0.3 : 0.6), location: 0.45), // Highlight
+                        .init(color: color.opacity(isAnimating ? 0.9 : 0.6), location: 1)
+                    ],
+                    startPoint: UnitPoint(x: isAnimating ? shimmerPhase - 1 : 0, y: 0),
+                    endPoint: UnitPoint(x: isAnimating ? shimmerPhase : 1, y: 1)
+                ),
+                style: FillStyle(eoFill: true)
+            )
             .frame(width: size, height: size)
             .scaleEffect(effectiveScale * bounceScale)
-            .animation(effectiveAnimation, value: isAnimating)
-            .animation(effectiveAnimation, value: isPulsing)
+            .animation(.easeInOut(duration: 0.3), value: isAnimating) // Smooth transition for state changes
             .onChange(of: bounce) { _, shouldBounce in
                 if shouldBounce {
                     performBounce()
                 }
             }
+            .onAppear {
+                if isAnimating { startShimmer() }
+            }
+            .onChange(of: isAnimating) { _, animating in
+                if animating {
+                    startShimmer()
+                } else {
+                    stopShimmer()
+                }
+            }
     }
-
-    private var effectiveOpacity: Double {
-        if isAnimating || isPulsing {
-            return 1.0
+    
+    private func startShimmer() {
+        // Reset phase
+        shimmerPhase = 0
+        // Continuous shimmer loop
+        withAnimation(.linear(duration: 2.0).repeatForever(autoreverses: false)) {
+            shimmerPhase = 2.0
         }
-        return 0.6
+    }
+    
+    private func stopShimmer() {
+        withAnimation(.easeOut(duration: 0.3)) {
+            shimmerPhase = 0
+        }
     }
 
     private var effectiveScale: CGFloat {
         if isAnimating {
-            return 1.1
+            return 1.05 // Subtle breathe
         } else if isPulsing {
-            return 1.15
+            return 1.1
         }
         return 1.0
-    }
-
-    private var effectiveAnimation: Animation {
-        if isAnimating {
-            return .easeInOut(duration: 0.6).repeatForever(autoreverses: true)
-        } else if isPulsing {
-            return .easeInOut(duration: 0.8).repeatForever(autoreverses: true)
-        }
-        return .default
     }
 
     private func performBounce() {
