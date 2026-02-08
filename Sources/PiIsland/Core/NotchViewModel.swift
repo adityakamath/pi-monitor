@@ -91,6 +91,14 @@ class NotchViewModel: ObservableObject {
         }
     }
 
+    /// Maximum panel size for hit testing (prevents race conditions when content type changes)
+    private var maxOpenedSize: CGSize {
+        CGSize(
+            width: min(screenRect.width * 0.5, 500),
+            height: 480
+        )
+    }
+
     /// Size of the closed notch
     var closedNotchSize: CGSize {
         CGSize(
@@ -257,14 +265,13 @@ class NotchViewModel: ObservableObject {
 
         switch status {
         case .opened:
-            if geometry.isPointOutsidePanel(location, size: openedSize) {
+            // Use maxOpenedSize for hit test to avoid race condition where button action
+            // changes content type before this handler runs
+            if geometry.isPointOutsidePanel(location, size: maxOpenedSize) {
                 notchClose()
                 repostClickAt(location)
-            } else if geometry.notchScreenRect.contains(location) {
-                if !isInDetailMode {
-                    notchClose()
-                }
             }
+            // Clicks inside the panel are handled by SwiftUI buttons
         case .closed, .hint:
             if geometry.isPointInNotch(location) || geometry.isPointInHintArea(location, hintSize: hintNotchSize) {
                 // Clear unread state when opening
@@ -332,7 +339,14 @@ class NotchViewModel: ObservableObject {
             currentChatSession = session
         }
         status = .closed
-        contentType = .sessions
+        // Preserve usage view - only reset chat/settings to sessions
+        switch contentType {
+        case .chat, .settings:
+            contentType = .sessions
+        case .sessions, .usage:
+            // Keep current view
+            break
+        }
 
         // Update tracking state for battery efficiency
         updateTrackingState()

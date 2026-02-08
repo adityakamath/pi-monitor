@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Preserve usage view state when leaving and reentering the notch
+- Move model selector from notch header to session body header
+- Make session/usage toggle always visible with icon reflecting current state (chart for sessions, list for usage)
+
 ## [0.4.1] - 2026-02-06
 
 ### Added

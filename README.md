@@ -1,6 +1,6 @@
 # Pi Island
 
-A native macOS Dynamic Island-style interface for the [Pi Coding Agent](https://github.com/mariozechner/pi-coding-agent). Pi Island provides a floating notch UI that gives you a glanceable view of your Pi agent's status with full chat capabilities.
+A native macOS Dynamic Island-style interface for the [Pi Coding Agent](https://pi.dev). Pi Island provides a floating notch UI that gives you a glanceable view of your Pi agent's status with full chat capabilities.
 
 <img width="1920" height="1080" alt="612_1x_shots_so" src="https://github.com/user-attachments/assets/7289590b-67df-4e67-9605-8353736acbd4" />
 

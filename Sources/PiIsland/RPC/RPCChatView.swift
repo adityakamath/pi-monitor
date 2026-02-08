@@ -145,6 +145,19 @@ struct SessionChatView: View {
 
             Spacer()
 
+            // Model selector (for live sessions)
+            if session.isLive {
+                ModelSelectorButton(session: session)
+            } else if let model = session.model {
+                Text(model.displayName)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .background(Color.white.opacity(0.08))
+                    .clipShape(.rect(cornerRadius: 6))
+            }
+
             // Token/cost display
             if let stats = session.sessionStats {
                 HStack(spacing: 8) {

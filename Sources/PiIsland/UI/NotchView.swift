@@ -257,8 +257,8 @@ struct NotchView: View {
     @ViewBuilder
     private var openedHeaderContent: some View {
         HStack(spacing: 8) {
-            // Left Side: Navigation (Back Button)
-            if case .chat(let session) = viewModel.contentType {
+            // Left Side: Navigation (Back Button for chat view)
+            if case .chat = viewModel.contentType {
                 Button {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                         viewModel.exitChat()
@@ -278,84 +278,59 @@ struct NotchView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+            }
 
-                // Center: Spacer deals with the physical notch
-                Spacer(minLength: 160)
+            // Center spacer
+            Spacer(minLength: isChatView ? 160 : 0)
 
-                // Right Side: Model Selector
-                if session.isLive {
-                    ModelSelectorButton(session: session)
-                } else if let model = session.model {
-                     Text(model.displayName)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.5))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 4)
-                        .background(Color.white.opacity(0.08))
-                        .clipShape(.rect(cornerRadius: 6))
-                }
-            } else if case .sessions = viewModel.contentType {
-                Spacer()
-
-                // Usage button
-                Button {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            // Right Side: Always visible toggle and settings buttons
+            // Session/Usage toggle button
+            Button {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    if case .usage = viewModel.contentType {
+                        viewModel.exitUsage()
+                    } else {
                         viewModel.showUsage()
                     }
-                } label: {
-                    Image(systemName: "chart.bar.fill")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.white.opacity(0.5))
-                        .frame(width: 28, height: 28)
-                        .background(Color.white.opacity(0.08))
-                        .clipShape(Circle())
                 }
-                .buttonStyle(.plain)
-                .contentShape(Rectangle())
-
-                // Settings button
-                Button {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                        viewModel.showSettings()
-                    }
-                } label: {
-                    Image(systemName: "gearshape.fill")
-                        .font(.system(size: 14))
-                        .foregroundStyle(.white.opacity(0.5))
-                        .frame(width: 28, height: 28)
-                        .background(Color.white.opacity(0.08))
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .contentShape(Rectangle())
-            } else if case .usage = viewModel.contentType {
-                // Back button for usage view
-                Button {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                        viewModel.exitUsage()
-                    }
-                } label: {
-                    HStack(spacing: 2) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 9, weight: .semibold))
-                        Text("Sessions")
-                            .font(.system(size: 11, weight: .medium))
-                    }
-                    .foregroundStyle(.white.opacity(0.5))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 4)
-                    .background(Color.white.opacity(0.08))
-                    .clipShape(.rect(cornerRadius: 6))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-
-                Spacer()
-            } else {
-                Spacer()
+            } label: {
+                Image(systemName: isUsageView ? "list.bullet" : "chart.bar.fill")
+                    .font(.system(size: 13))
+                    .foregroundStyle(isUsageView ? .white : .white.opacity(0.5))
+                    .frame(width: 28, height: 28)
+                    .background(Color.white.opacity(isUsageView ? 0.15 : 0.08))
+                    .clipShape(Circle())
             }
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
+
+            // Settings button
+            Button {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    viewModel.showSettings()
+                }
+            } label: {
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .frame(width: 28, height: 28)
+                    .background(Color.white.opacity(0.08))
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
         }
         .padding(.leading, 4)
+    }
+
+    private var isChatView: Bool {
+        if case .chat = viewModel.contentType { return true }
+        return false
+    }
+
+    private var isUsageView: Bool {
+        if case .usage = viewModel.contentType { return true }
+        return false
     }
 
     // MARK: - Content View
