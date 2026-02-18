@@ -31,7 +31,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var windowController: NotchWindowController?
     var statusBarController: StatusBarController?
     var sessionManager: SessionManager?
-    var displayMonitor: DisplayMonitor?
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -42,11 +41,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Create session manager
         sessionManager = SessionManager()
 
-        // Create display monitor
-        displayMonitor = DisplayMonitor()
-
-        // Get the screen with the notch (or main screen)
-        guard let screen = displayMonitor?.targetScreen ?? NSScreen.builtin ?? NSScreen.main else {
+        // Get the main screen
+        guard let screen = NSScreen.main else {
             logger.error("No screen found")
             return
         }
@@ -54,12 +50,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Create window controller
         windowController = NotchWindowController(screen: screen, sessionManager: sessionManager!)
         windowController?.showWindow(nil)
-
-        // Subscribe to display changes
-        displayMonitor?.onTargetScreenChange = { [weak self] newScreen in
-            guard let newScreen else { return }
-            self?.windowController?.updateForScreen(newScreen)
-        }
 
         // Create status bar
         statusBarController = StatusBarController(sessionManager: sessionManager!)
@@ -80,7 +70,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         sessionManager?.stopWatching()
-        displayMonitor?.removeObserver()
 
         Task {
             if let manager = sessionManager {
