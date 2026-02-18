@@ -11,7 +11,7 @@ import Foundation
 enum AppVersion {
     /// Hardcoded version - update this when releasing
     /// This is the fallback when not running from a bundled .app
-    private static let hardcodedVersion = "0.5.0"
+    private static let hardcodedVersion = "0.0.1"
 
     /// The current app version (e.g., "0.4.0")
     static var current: String {
@@ -34,8 +34,8 @@ enum AppVersion {
         "\(current) (\(build))"
     }
 
-    /// Display string for UI (e.g., "Pi Island v0.4.0")
+    /// Display string for UI (e.g., "Pi Monitor v0.0.1")
     static var display: String {
-        "Pi Island v\(current)"
+        "Pi Monitor v\(current)"
     }
 }

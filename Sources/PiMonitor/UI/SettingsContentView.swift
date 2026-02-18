@@ -32,7 +32,7 @@ struct SettingsContentView: View {
             VStack(spacing: 2) {
                 SettingsToggleRow(
                     title: "Launch at Login",
-                    subtitle: "Start Pi Island when you log in",
+                    subtitle: "Start Pi Monitor when you log in",
                     icon: "power",
                     isOn: $launchAtLogin
                 )
@@ -52,37 +52,6 @@ struct SettingsContentView: View {
             }
 
             Spacer()
-
-            // Update available banner
-            if UpdateChecker.shared.updateAvailable, let version = UpdateChecker.shared.latestVersion {
-                Button(action: { UpdateChecker.shared.openReleasePage() }) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "arrow.down.circle.fill")
-                            .font(.system(size: 14))
-                            .foregroundStyle(.green)
-
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("Update Available")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.white)
-                            Text("v\(version) - Click to download")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white.opacity(0.6))
-                        }
-
-                        Spacer()
-
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.white.opacity(0.4))
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.green.opacity(0.15))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-                .buttonStyle(.plain)
-            }
 
             // Version info
             Text(AppVersion.display)

@@ -9,7 +9,7 @@ import AppKit
 import Foundation
 import OSLog
 
-private let logger = Logger(subsystem: "com.pi-island", category: "UpdateChecker")
+private let logger = Logger(subsystem: "com.pi-monitor", category: "UpdateChecker")
 
 @MainActor
 @Observable

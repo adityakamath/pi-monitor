@@ -60,10 +60,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             sessionManager?.startWatching()
         }
 
-        // Check for updates
-        Task {
-            await UpdateChecker.shared.checkForUpdates()
-        }
+        // Disable update checking for now (no pi-monitor repository yet)
+        // Task {
+        //     await UpdateChecker.shared.checkForUpdates()
+        // }
 
         logger.info("Pi Monitor started")
     }
