@@ -30,7 +30,7 @@ A native macOS window application for the [Pi Coding Agent](https://pi.dev). Pi 
 ### Settings
 - **Launch at Login** - Start Pi Monitor automatically
 - **Show in Dock** - Toggle dock icon visibility
-- **Menu Bar** - Quick access to quit
+- **Menu Bar Icon** - Always visible in menu bar with options to open or quit the app
 
 ### UI Polish
 - **Clean Layout** - Standard window with header and content area
@@ -139,10 +139,18 @@ The app will launch silently without opening a terminal window.
 
 ## Usage
 
-1. Launch Pi Monitor
+1. Launch Pi Monitor from Applications or via the menu bar icon
 2. The window will open centered on your screen
 3. Click a session to open chat, or click the settings icon for configuration
 4. Type messages in the input bar to interact with Pi
+
+### Menu Bar
+
+Pi Monitor includes a menu bar icon (Pi logo) in the top-right of your screen:
+- **Open Pi Monitor** (⌘O) - Brings the window to front (useful when dock icon is hidden)
+- **Quit Pi Monitor** (⌘Q) - Exits the application
+
+The menu bar icon is always visible, even when "Show in Dock" is disabled in settings.
 
 ### Status Indicators
 
