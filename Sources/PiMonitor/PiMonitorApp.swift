@@ -52,7 +52,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         windowController?.showWindow(nil)
 
         // Create status bar
-        statusBarController = StatusBarController(sessionManager: sessionManager!)
+        statusBarController = StatusBarController(
+            sessionManager: sessionManager!,
+            windowController: windowController!
+        )
 
         // Load historical sessions and start file watching
         Task { @MainActor in
@@ -87,9 +90,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 class StatusBarController {
     private var statusItem: NSStatusItem?
     private var sessionManager: SessionManager
+    private weak var windowController: NotchWindowController?
 
-    init(sessionManager: SessionManager) {
+    init(sessionManager: SessionManager, windowController: NotchWindowController) {
         self.sessionManager = sessionManager
+        self.windowController = windowController
         setupStatusItem()
         // Note: Usage monitoring starts on-demand when the usage view is displayed
         // for battery efficiency. See UsageNotchView.onAppear/onDisappear.
@@ -109,12 +114,25 @@ class StatusBarController {
     private func updateMenu() {
         let menu = NSMenu()
 
+        // Open
+        let openItem = NSMenuItem(title: "Open Pi Monitor", action: #selector(openWindow), keyEquivalent: "o")
+        openItem.target = self
+        menu.addItem(openItem)
+
+        // Separator
+        menu.addItem(NSMenuItem.separator())
+
         // Quit
         let quitItem = NSMenuItem(title: "Quit Pi Monitor", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
 
         statusItem?.menu = menu
+    }
+
+    @objc private func openWindow() {
+        windowController?.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     @objc private func quit() {
