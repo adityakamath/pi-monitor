@@ -4,6 +4,8 @@ A native macOS window application for the [Pi Coding Agent](https://pi.dev). Pi 
 
 > **Note:** Screenshots coming soon! The app features a clean macOS window with session management, chat interface, and real-time status indicators.
 
+> **Looking for Pi Island?** The original Dynamic Island implementation is preserved in the [`island` branch](https://github.com/adityakamath/pi-monitor/tree/island).
+
 ## Features
 
 ### Core
