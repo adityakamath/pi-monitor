@@ -1,13 +1,13 @@
-# Pi Island
+# Pi Monitor
 
-A native macOS Dynamic Island-style interface for the [Pi Coding Agent](https://pi.dev). Pi Island provides a floating notch UI that gives you a glanceable view of your Pi agent's status with full chat capabilities.
+A native macOS window application for the [Pi Coding Agent](https://pi.dev). Pi Monitor provides a clean desktop interface for managing and interacting with your Pi agent sessions.
 
-<img width="1920" height="1080" alt="612_1x_shots_so" src="https://github.com/user-attachments/assets/7289590b-67df-4e67-9605-8353736acbd4" />
+> **Note:** Screenshots coming soon! The app features a clean macOS window with session management, chat interface, and real-time status indicators.
 
 ## Features
 
 ### Core
-- **Floating Notch UI** - Sits at the top of your screen, mimicking Dynamic Island
+- **Native Window Interface** - Standard macOS window with resizable, draggable interface
 - **Full Chat Interface** - Send messages, receive streaming responses
 - **Real-time Status** - See thinking, executing, idle states at a glance
 - **Tool Execution** - Watch tool calls with live output streaming
@@ -18,7 +18,7 @@ A native macOS Dynamic Island-style interface for the [Pi Coding Agent](https://
 - **Session Resume** - Click any historical session to resume where you left off
 - **Historical Sessions** - Browse recent sessions from ~/.pi/agent/sessions/
 - **External Activity Detection** - Yellow indicator for sessions active in other terminals
-- **Live Session Indicators** - Green dot for connected sessions
+- **Live Session Indicators** - Visual indicators for connected sessions
 
 ### Model & Provider
 - **Model Selector** - Dropdown to switch between available models
@@ -26,23 +26,22 @@ A native macOS Dynamic Island-style interface for the [Pi Coding Agent](https://
 - **Thinking Level** - Adjustable reasoning depth for supported models
 
 ### Settings
-- **Launch at Login** - Start Pi Island automatically
+- **Launch at Login** - Start Pi Monitor automatically
 - **Show in Dock** - Toggle dock icon visibility
 - **Menu Bar** - Quick access to quit
 
 ### UI Polish
-- **Boot Animation** - Smooth expand/collapse on launch
-- **Hover to Expand** - Natural interaction with notch area
-- **Click Outside to Close** - Dismiss by clicking elsewhere
+- **Clean Layout** - Standard window with header and content area
+- **Proper Padding** - 16pt spacing for comfortable viewing
 - **Auto-scroll** - Chat scrolls to latest message
-- **Glass Effect** - Ultra-thin material background
+- **Dark Mode** - Optimized for dark mode interface
 
 ## Architecture
 
-Pi Island spawns Pi in RPC mode (`pi --mode rpc`) and communicates via stdin/stdout JSON protocol:
+Pi Monitor spawns Pi in RPC mode (`pi --mode rpc`) and communicates via stdin/stdout JSON protocol:
 
 ```
-Pi Island (macOS app)
+Pi Monitor (macOS app)
     |
     |--- stdin: Commands (prompt, switch_session, get_messages, etc.)
     |--- stdout: Events (message streaming, tool execution, etc.)
@@ -63,7 +62,7 @@ pi --mode rpc (child process)
 
 ```bash
 swift build
-.build/debug/PiIsland
+.build/debug/PiMonitor
 ```
 
 ### Production (App Bundle)
@@ -74,8 +73,8 @@ Create a proper macOS `.app` bundle with icon and LSUIElement support:
 ./scripts/bundle.sh
 ```
 
-This generates `Pi Island.app` with:
-- Proper app icon from `pi-island.icon` (Xcode 15+ Icon Composer format)
+This generates `Pi Monitor.app` with:
+- Proper app icon from `pi-monitor.icon` (Xcode 15+ Icon Composer format)
 - `LSUIElement: true` - no dock icon by default, no terminal on launch
 - All resources bundled correctly
 - Login shell environment extraction (works when launched from Finder)
@@ -98,56 +97,55 @@ Build and sign:
 ./scripts/bundle.sh --sign-id "Developer ID Application: Your Name (TEAM_ID)" --dmg
 ```
 
-This creates `Pi-Island-0.3.0.dmg`. To completely remove the "Apple could not verify..." warning for other users, you must notarize the DMG:
+This creates `Pi-Monitor-0.0.1.dmg`. To completely remove the "Apple could not verify..." warning for other users, you must notarize the DMG:
 
 ```bash
 export APPLE_ID="your@email.com"
 export APPLE_PASSWORD="app-specific-password"
 export APPLE_TEAM_ID="YOUR_TEAM_ID"
 
-./scripts/notarize.sh Pi-Island-0.3.0.dmg
+./scripts/notarize.sh Pi-Monitor-0.0.1.dmg
 ```
 
 You can verify the result with:
 ```bash
-spctl -a -vv -t install "Pi-Island-0.3.0.dmg"
+spctl -a -vv -t install "Pi-Monitor-0.0.1.dmg"
 ```
 
 **Note:** Without a Developer ID certificate and notarization, recipients may see a "damaged" error or a security warning. They can bypass this by right-clicking the app and selecting **Open**, or by running:
 ```bash
-xattr -cr "/Applications/Pi Island.app"
+xattr -cr "/Applications/Pi Monitor.app"
 ```
 
 ### Installation
 
 From DMG:
-1. Open `Pi-Island-0.3.0.dmg`
-2. Drag `Pi Island` to the `Applications` folder
+1. Open `Pi-Monitor-0.0.1.dmg`
+2. Drag `Pi Monitor` to the `Applications` folder
 
 Or manually:
 ```bash
-cp -R "Pi Island.app" /Applications/
+cp -R "Pi Monitor.app" /Applications/
 ```
 
 ### Auto-launch at Login
 
 1. Open **System Settings > General > Login Items**
-2. Click **+** and add **Pi Island** from Applications
+2. Click **+** and add **Pi Monitor** from Applications
 
 The app will launch silently without opening a terminal window.
 
 ## Usage
 
-1. Launch Pi Island
-2. Hover over the notch area at the top of your screen to expand
-3. Click a session to open chat, or click gear icon for settings
+1. Launch Pi Monitor
+2. The window will open centered on your screen
+3. Click a session to open chat, or click the settings icon for configuration
 4. Type messages in the input bar to interact with Pi
 
 ### Status Indicators
 
 - **Gray** - Disconnected / Historical session
 - **Yellow** - Externally active (modified recently)
-- **Orange** - Connecting
 - **Green** - Connected and idle
 - **Blue** - Thinking
 - **Cyan** - Executing tool
@@ -156,28 +154,36 @@ The app will launch silently without opening a terminal window.
 ## File Structure
 
 ```
-pi-island/
+pi-monitor/
   Package.swift
   Sources/
-    PiIsland/
-      PiIslandApp.swift           # Entry point, AppDelegate, StatusBarController
+    PiMonitor/
+      PiMonitorApp.swift          # Entry point, AppDelegate, StatusBarController
       Core/
-        EventMonitors.swift       # Global mouse event monitoring
-        NotchGeometry.swift       # Geometry calculations
-        NotchViewModel.swift      # State management
-        NSScreen+Notch.swift      # Screen extensions
+        AppVersion.swift           # Version management
+        NotchViewModel.swift       # State management
+        UpdateChecker.swift        # Update checking (disabled)
       UI/
-        NotchView.swift           # Main SwiftUI view
-        NotchShape.swift          # Animatable notch shape
-        NotchWindowController.swift
-        PiLogo.swift              # Pi logo shape
-        SettingsView.swift        # Settings panel
+        NotchView.swift            # Main SwiftUI view
+        NotchWindowController.swift # Window controller
+        PiLogo.swift               # Pi logo shape
+        SettingsContentView.swift  # Settings panel
+        SessionsListView.swift     # Sessions list
       RPC/
-        PiRPCClient.swift         # RPC process management
-        RPCChatView.swift         # Chat UI components
-        RPCTypes.swift            # Protocol types
-        SessionManager.swift      # Session management
+        PiRPCClient.swift          # RPC process management
+        RPCChatView.swift          # Chat UI components
+        RPCTypes.swift             # Protocol types
+        SessionManager.swift       # Session management
+      UsageMonitor/
+        Services/
+          UsageMonitorService.swift # Usage tracking
+        Views/
+          UsageNotchView.swift      # Usage display
 ```
+
+## Version
+
+Current version: **0.0.1**
 
 ## License
 
