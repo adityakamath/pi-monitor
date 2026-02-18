@@ -56,7 +56,7 @@ struct NotchView: View {
                     color: activityColor(for: activityState)
                 )
                 
-                Text("Pi Island")
+                Text("Pi Monitor")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.primary)
             }

@@ -1,6 +1,6 @@
 //
 //  main.swift
-//  PiIsland
+//  PiMonitor
 //
 //  Custom entry point to set activation policy BEFORE SwiftUI initializes
 //
@@ -9,7 +9,7 @@ import AppKit
 import SwiftUI
 import OSLog
 
-private let logger = Logger(subsystem: "com.pi-island", category: "Main")
+private let logger = Logger(subsystem: "com.pi-monitor", category: "Main")
 
 // Set activation policy FIRST, before any UI code runs
 let showInDock = UserDefaults.standard.bool(forKey: "showInDock")
@@ -26,7 +26,7 @@ func loadAppIcon() -> NSImage? {
 
     // Try 2: App bundle Resources folder (resource bundle inside .app)
     if let resourceURL = Bundle.main.resourceURL {
-        let resourceBundle = resourceURL.appendingPathComponent("PiIsland_PiIsland.bundle")
+        let resourceBundle = resourceURL.appendingPathComponent("PiMonitor_PiMonitor.bundle")
         if let icon = loadIconFromAssets(in: resourceBundle) {
             return icon
         }
@@ -40,7 +40,7 @@ func loadAppIcon() -> NSImage? {
     // Try 4: Next to executable (SPM debug builds)
     if let execURL = Bundle.main.executableURL {
         let execDir = execURL.deletingLastPathComponent()
-        let bundleURL = execDir.appendingPathComponent("PiIsland_PiIsland.bundle")
+        let bundleURL = execDir.appendingPathComponent("PiMonitor_PiMonitor.bundle")
         if let icon = loadIconFromAssets(in: bundleURL) {
             return icon
         }
@@ -71,4 +71,4 @@ if let icon = loadAppIcon() {
 }
 
 // Now launch the SwiftUI app
-PiIslandApp.main()
+PiMonitorApp.main()

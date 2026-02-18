@@ -2,23 +2,23 @@
 import PackageDescription
 
 let package = Package(
-    name: "PiIsland",
+    name: "PiMonitor",
     platforms: [
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "PiIsland", targets: ["PiIsland"])
+        .executable(name: "PiMonitor", targets: ["PiMonitor"])
     ],
     dependencies: [
         .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.4.0")
     ],
     targets: [
         .executableTarget(
-            name: "PiIsland",
+            name: "PiMonitor",
             dependencies: [
                 .product(name: "MarkdownUI", package: "swift-markdown-ui")
             ],
-            path: "Sources/PiIsland",
+            path: "Sources/PiMonitor",
             resources: [
                 .process("Assets.xcassets")
             ]

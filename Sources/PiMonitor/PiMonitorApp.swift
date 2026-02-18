@@ -1,6 +1,6 @@
 //
-//  PiIslandApp.swift
-//  PiIsland
+//  PiMonitorApp.swift
+//  PiMonitor
 //
 //  App entry point and delegates
 //
@@ -10,12 +10,12 @@ import AppKit
 import Combine
 import OSLog
 
-private let logger = Logger(subsystem: "com.pi-island", category: "App")
+private let logger = Logger(subsystem: "com.pi-monitor", category: "App")
 
 // MARK: - App Entry Point
 // Note: @main is NOT used here - see main.swift for custom entry point
 
-struct PiIslandApp: App {
+struct PiMonitorApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
@@ -65,7 +65,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             await UpdateChecker.shared.checkForUpdates()
         }
 
-        logger.info("Pi Island started")
+        logger.info("Pi Monitor started")
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -110,7 +110,7 @@ class StatusBarController {
         let menu = NSMenu()
 
         // Quit
-        let quitItem = NSMenuItem(title: "Quit Pi Island", action: #selector(quit), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "Quit Pi Monitor", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
 

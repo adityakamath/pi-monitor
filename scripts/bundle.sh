@@ -13,9 +13,9 @@
 set -e
 
 # Configuration
-APP_NAME="Pi Island"
-BUNDLE_ID="me.jwintz.pi-island"
-EXECUTABLE="PiIsland"
+APP_NAME="Pi Monitor"
+BUNDLE_ID="me.jwintz.pi-monitor"
+EXECUTABLE="PiMonitor"
 
 # Get version from git tag, fallback to 0.0.0
 VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")
@@ -112,7 +112,7 @@ cat > "$CONTENTS/Info.plist" << EOF
 EOF
 
 # Generate icon using actool from .icon package (Xcode 15+ format)
-ICON_PACKAGE="$PROJECT_DIR/pi-island.icon"
+ICON_PACKAGE="$PROJECT_DIR/pi-monitor.icon"
 if [ -d "$ICON_PACKAGE" ]; then
     echo "Compiling icon from .icon package..."
     ICON_OUTPUT=$(mktemp -d)
@@ -120,14 +120,14 @@ if [ -d "$ICON_PACKAGE" ]; then
     xcrun actool --compile "$ICON_OUTPUT" \
         --platform macosx \
         --minimum-deployment-target 14.0 \
-        --app-icon pi-island \
+        --app-icon pi-monitor \
         --output-partial-info-plist "$ICON_OUTPUT/Info.plist" \
         "$ICON_PACKAGE" 2>/dev/null
 
     # Extract the generated icns to an iconset, then add missing sizes
-    if [ -f "$ICON_OUTPUT/pi-island.icns" ]; then
+    if [ -f "$ICON_OUTPUT/pi-monitor.icns" ]; then
         ICONSET="$ICON_OUTPUT/AppIcon.iconset"
-        iconutil -c iconset "$ICON_OUTPUT/pi-island.icns" -o "$ICONSET" 2>/dev/null || mkdir -p "$ICONSET"
+        iconutil -c iconset "$ICON_OUTPUT/pi-monitor.icns" -o "$ICONSET" 2>/dev/null || mkdir -p "$ICONSET"
 
         # Find the largest available icon to use as source
         SOURCE_ICON=""
@@ -173,7 +173,7 @@ if [ -d "$ICON_PACKAGE" ]; then
 
     rm -rf "$ICON_OUTPUT"
 else
-    echo "Warning: pi-island.icon not found, falling back to PNG icons"
+    echo "Warning: pi-monitor.icon not found, falling back to PNG icons"
 
     # Fallback: Create icns from PNG icons
     ICONSET="$RESOURCES/AppIcon.iconset"
@@ -228,7 +228,7 @@ fi
 # Create DMG
 if [ "$CREATE_DMG" = true ]; then
     echo "Creating DMG..."
-    DMG_NAME="Pi-Island-${VERSION}.dmg"
+    DMG_NAME="Pi-Monitor-${VERSION}.dmg"
     DMG_PATH="$PROJECT_DIR/$DMG_NAME"
 
     # Remove old DMG if exists

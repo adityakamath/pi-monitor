@@ -35,7 +35,7 @@ class NotchWindowController: NSWindowController {
         super.init(window: regularWindow)
 
         // Configure window
-        regularWindow.title = "Pi Island"
+        regularWindow.title = "Pi Monitor"
         regularWindow.minSize = NSSize(width: 400, height: 300)
         regularWindow.isOpaque = true
         regularWindow.backgroundColor = NSColor.windowBackgroundColor

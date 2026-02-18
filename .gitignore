@@ -20,6 +20,8 @@ node_modules/
 # Artifacts
 Pi-Island-*.dmg
 Pi Island.app
+Pi-Monitor-*.dmg
+Pi Monitor.app
 dist/
 
 # Debug logs
