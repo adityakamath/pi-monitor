@@ -163,6 +163,7 @@ struct NotchView: View {
                 UsageNotchView()
             }
         }
+        .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
